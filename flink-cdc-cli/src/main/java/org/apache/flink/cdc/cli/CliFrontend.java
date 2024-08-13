@@ -27,10 +27,6 @@ import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 
 import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,10 +51,11 @@ public class CliFrontend {
     private static final String url = "jdbc:mysql://localhost:3306/app_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private static final String url_source = "jdbc:mysql://localhost:3306/source_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
 
-    private static final String user = "mysqluser";
-    private static final String password = "mysqlpw";
+    private static final String user = "root";
+    private static final String password = "123456";
+    private static final Integer LIMIT_COUNT = 10;
     private static Connection conn1;
-    private static Connection conn2;
+    private static Connection conn_source;
 
     static {
         try {
@@ -73,7 +70,7 @@ public class CliFrontend {
         // 建立连接
         try {
             conn1 = DriverManager.getConnection(url, user, password);
-            conn2 = DriverManager.getConnection(url_source, user, password);
+            conn_source = DriverManager.getConnection(url_source, user, password);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -81,57 +78,27 @@ public class CliFrontend {
 
     public static void main(String[] args) throws Exception {
 
+        sinkData(fetchData());
+        delData();
 
-        try {
-            // 加载和注册JDBC驱动
-            Class.forName("com.mysql.cj.jdbc.Driver");
-
-            //从 source 查出结果
-            //写入 sink
-            //删除 source
-            // 建立连接
-            Connection conn = DriverManager.getConnection(url, user, password);
-
-            // 创建Statement来执行SQL语句
-            Statement stmt = conn.createStatement();
-
-            // 执行查询
-            String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit 10;";
-            ResultSet rs = stmt.executeQuery(sql);
-
-            // 处理查询结果
-            while (rs.next()) {
-                int id = rs.getInt("id");
-                String name = rs.getString("name");
-                System.out.println("ID: " + id + ", Name: " + name);
-            }
-
-            // 关闭连接
-            rs.close();
-            stmt.close();
-            conn.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        Options cliOptions = CliFrontendOptions.initializeOptions();
-        CommandLineParser parser = new DefaultParser();
-        CommandLine commandLine = parser.parse(cliOptions, args);
-
-        // Help message
-        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
-            HelpFormatter formatter = new HelpFormatter();
-            formatter.setLeftPadding(4);
-            formatter.setWidth(80);
-            formatter.printHelp(" ", cliOptions);
-            return;
-        }
-
-        // Create executor and execute the pipeline
-        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
-
-        // Print execution result
-        printExecutionInfo(result);
+//        Options cliOptions = CliFrontendOptions.initializeOptions();
+//        CommandLineParser parser = new DefaultParser();
+//        CommandLine commandLine = parser.parse(cliOptions, args);
+//
+//        // Help message
+//        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
+//            HelpFormatter formatter = new HelpFormatter();
+//            formatter.setLeftPadding(4);
+//            formatter.setWidth(80);
+//            formatter.printHelp(" ", cliOptions);
+//            return;
+//        }
+//
+//        // Create executor and execute the pipeline
+//        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
+//
+//        // Print execution result
+//        printExecutionInfo(result);
     }
 
     @VisibleForTesting
@@ -253,44 +220,80 @@ public class CliFrontend {
         System.out.printf("Job Description: %s\n", info.getDescription());
     }
 
-    private static List<Map<String, Object>> getSourceData() {
+    private static List<Map<String, Object>> fetchData() {
 
         List<Map<String, Object>> list = new LinkedList<>();
-        try {
 
-
-            //从 source 查出结果
-            //写入 sink
-            //删除 source
-            // 建立连接
-
-            // 创建Statement来执行SQL语句
-            Statement stmt = conn1.createStatement();
-
-            // 执行查询
-            String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit 10;";
-            ResultSet rs = stmt.executeQuery(sql);
-
-            // 处理查询结果
+        String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit " + LIMIT_COUNT;
+        try (Statement stmt = conn_source.createStatement();
+             ResultSet rs = stmt.executeQuery(sql);
+        ) {
             while (rs.next()) {
                 HashMap<String, Object> hashMap = new HashMap<String, Object>() {
                     {
-                        put("code", rs.getInt("code"));
+                        put("code", rs.getLong("code"));
                         put("name", rs.getString("name"));
-                        put("level", rs.getInt("level"));
-                        put("pcode", rs.getInt("pcode"));
-                        put("category", rs.getInt("category"));
+                        put("level", rs.getLong("level"));
+                        put("pcode", rs.getLong("pcode"));
+                        put("category", rs.getLong("category"));
                     }
                 };
                 list.add(hashMap);
             }
-
-            // 关闭连接
-            rs.close();
-            stmt.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
         return list;
+    }
+
+    private static void sinkData(List<Map<String, Object>> data) {
+        String sql = "INSERT INTO area_code_2024 (code, name, level, pcode, category) VALUES (?, ?, ?, ?, ?)";
+        try (
+                // 创建PreparedStatement
+                PreparedStatement pstmt = conn1.prepareStatement(sql);
+        ) {
+            // 遍历数据列表，为每个数据项设置参数并添加到批处理中
+            for (Map<String, Object> map : data) {
+                pstmt.setLong(1, Long.parseLong(map.get("code").toString()));
+                pstmt.setString(2, map.get("name").toString());
+                pstmt.setLong(3, Long.parseLong(map.get("level").toString()));
+                pstmt.setLong(4, Long.parseLong(map.get("pcode").toString()));
+                pstmt.setLong(5, Long.parseLong(map.get("category").toString()));
+                pstmt.addBatch(); // 将此SQL语句添加到批处理中
+            }
+
+            // 执行批处理
+            int[] affectedRows = pstmt.executeBatch();
+
+            // 输出受影响的行数（可选）
+            for (int i = 0; i < affectedRows.length; i++) {
+                System.out.println("第 " + (i + 1) + " 条数据插入成功，影响了 " + affectedRows[i] + " 行");
+            }
+
+            // 注意：这里不需要显式关闭pstmt和conn，因为使用了try-with-resources语句
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void delData() {
+
+        String sql = "delete from area_code_2024 order by code asc limit " + LIMIT_COUNT;
+        try (
+                // 创建PreparedStatement
+                PreparedStatement pstmt = conn_source.prepareStatement(sql);
+        ) {
+            // 遍历数据列表，为每个数据项设置参数并添加到批处理中
+
+
+            // 执行批处理
+            int affectedRows = pstmt.executeUpdate();
+
+            System.out.println("成功删除了 " + affectedRows + " 行数据。");
+
+            // 注意：这里不需要显式关闭pstmt和conn，因为使用了try-with-resources语句
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 }
