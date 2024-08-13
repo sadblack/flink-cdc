@@ -313,37 +313,49 @@ public class MySqlSourceReader<T>
     }
 
     @Override
+    /**
+     * 处理源事件。
+     *
+     * @param sourceEvent 源事件对象
+     */
     public void handleSourceEvents(SourceEvent sourceEvent) {
+        // 检查是否为处理完毕的快照分割确认事件
         if (sourceEvent instanceof FinishedSnapshotSplitsAckEvent) {
             FinishedSnapshotSplitsAckEvent ackEvent = (FinishedSnapshotSplitsAckEvent) sourceEvent;
             LOG.debug(
                     "Source reader {} receives ack event for {} from enumerator.",
                     subtaskId,
                     ackEvent.getFinishedSplits());
+            // 移除已处理完毕且确认过的分割
             for (String splitId : ackEvent.getFinishedSplits()) {
                 this.finishedUnackedSplits.remove(splitId);
             }
         } else if (sourceEvent instanceof FinishedSnapshotSplitsRequestEvent) {
-            // report finished snapshot splits
+            // 报告处理完毕的快照分割
             LOG.debug(
                     "Source reader {} receives request to report finished snapshot splits.",
                     subtaskId);
             reportFinishedSnapshotSplitsIfNeed();
         } else if (sourceEvent instanceof BinlogSplitMetaEvent) {
+            // 处理binlog分割元数据事件
             LOG.debug(
                     "Source reader {} receives binlog meta with group id {}.",
                     subtaskId,
                     ((BinlogSplitMetaEvent) sourceEvent).getMetaGroupId());
             fillMetadataForBinlogSplit((BinlogSplitMetaEvent) sourceEvent);
         } else if (sourceEvent instanceof BinlogSplitUpdateRequestEvent) {
+            // 处理binlog分割更新请求事件
             LOG.info("Source reader {} receives binlog split update event.", subtaskId);
             handleBinlogSplitUpdateRequest();
         } else if (sourceEvent instanceof LatestFinishedSplitsNumberEvent) {
+            // 更新binlog分割
             updateBinlogSplit((LatestFinishedSplitsNumberEvent) sourceEvent);
         } else {
+            // 交给父类处理其他类型的事件
             super.handleSourceEvents(sourceEvent);
         }
     }
+
 
     private void handleBinlogSplitUpdateRequest() {
         mySqlSourceReaderContext.suspendBinlogSplitReader();

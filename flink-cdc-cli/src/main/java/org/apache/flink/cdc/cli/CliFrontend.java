@@ -38,9 +38,8 @@ import java.io.FileNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.sql.*;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.cdc.cli.CliFrontendOptions.SAVEPOINT_ALLOW_NON_RESTORED_OPTION;
@@ -53,7 +52,68 @@ public class CliFrontend {
     private static final String FLINK_HOME_ENV_VAR = "FLINK_HOME";
     private static final String FLINK_CDC_HOME_ENV_VAR = "FLINK_CDC_HOME";
 
+    private static final String url = "jdbc:mysql://localhost:3306/app_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private static final String url_source = "jdbc:mysql://localhost:3306/source_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+
+    private static final String user = "mysqluser";
+    private static final String password = "mysqlpw";
+    private static Connection conn1;
+    private static Connection conn2;
+
+    static {
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+        //从 source 查出结果
+        //写入 sink
+        //删除 source
+        // 建立连接
+        try {
+            conn1 = DriverManager.getConnection(url, user, password);
+            conn2 = DriverManager.getConnection(url_source, user, password);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
+
+
+        try {
+            // 加载和注册JDBC驱动
+            Class.forName("com.mysql.cj.jdbc.Driver");
+
+            //从 source 查出结果
+            //写入 sink
+            //删除 source
+            // 建立连接
+            Connection conn = DriverManager.getConnection(url, user, password);
+
+            // 创建Statement来执行SQL语句
+            Statement stmt = conn.createStatement();
+
+            // 执行查询
+            String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit 10;";
+            ResultSet rs = stmt.executeQuery(sql);
+
+            // 处理查询结果
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String name = rs.getString("name");
+                System.out.println("ID: " + id + ", Name: " + name);
+            }
+
+            // 关闭连接
+            rs.close();
+            stmt.close();
+            conn.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         Options cliOptions = CliFrontendOptions.initializeOptions();
         CommandLineParser parser = new DefaultParser();
         CommandLine commandLine = parser.parse(cliOptions, args);
@@ -191,5 +251,46 @@ public class CliFrontend {
         System.out.println("Pipeline has been submitted to cluster.");
         System.out.printf("Job ID: %s\n", info.getId());
         System.out.printf("Job Description: %s\n", info.getDescription());
+    }
+
+    private static List<Map<String, Object>> getSourceData() {
+
+        List<Map<String, Object>> list = new LinkedList<>();
+        try {
+
+
+            //从 source 查出结果
+            //写入 sink
+            //删除 source
+            // 建立连接
+
+            // 创建Statement来执行SQL语句
+            Statement stmt = conn1.createStatement();
+
+            // 执行查询
+            String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit 10;";
+            ResultSet rs = stmt.executeQuery(sql);
+
+            // 处理查询结果
+            while (rs.next()) {
+                HashMap<String, Object> hashMap = new HashMap<String, Object>() {
+                    {
+                        put("code", rs.getInt("code"));
+                        put("name", rs.getString("name"));
+                        put("level", rs.getInt("level"));
+                        put("pcode", rs.getInt("pcode"));
+                        put("category", rs.getInt("category"));
+                    }
+                };
+                list.add(hashMap);
+            }
+
+            // 关闭连接
+            rs.close();
+            stmt.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return list;
     }
 }

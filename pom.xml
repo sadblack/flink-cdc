@@ -73,7 +73,7 @@ limitations under the License.
         <flink.reuseForks>true</flink.reuseForks>
 
         <!-- dependencies versions -->
-        <flink.version>1.18.1</flink.version>
+        <flink.version>1.18.0</flink.version>
         <flink.major.version>1.18</flink.major.version>
         <flink.shaded.version>17.0</flink.shaded.version>
         <debezium.version>1.9.8.Final</debezium.version>
@@ -246,37 +246,43 @@ limitations under the License.
     </dependencyManagement>
 
     <dependencies>
+        <!-- jsr305 用于代码检查 -->
+        <dependency>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+            <version>3.0.2</version>
+        </dependency>
         <!-- Apache Flink dependencies -->
         <!-- These dependencies are provided, because they should not be packaged into the JAR file. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-common</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-base</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-api-java-bridge</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-core</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-streaming-java</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -303,7 +309,7 @@ limitations under the License.
             <artifactId>hamcrest-all</artifactId>
             <version>${hamcrest.version}</version>
             <type>jar</type>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
         <!-- tests will have log4j as the default logging framework available -->
@@ -311,52 +317,52 @@ limitations under the License.
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-slf4j-impl</artifactId>
             <version>${log4j.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-api</artifactId>
             <version>${log4j.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core</artifactId>
             <version>${log4j.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <!-- API bridge between log4j 1 and 2 -->
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-1.2-api</artifactId>
             <version>${log4j.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
             <version>${version.awaitility}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
         <dependency>
             <groupId>org.junit.vintage</groupId>
             <artifactId>junit-vintage-engine</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <version>${assertj.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 

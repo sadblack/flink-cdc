@@ -91,20 +91,27 @@ public class FlinkPipelineComposer implements PipelineComposer {
     }
 
     @Override
+    /**
+     * 组合管道定义为一个执行流程
+     *
+     * @param pipelineDef 管道定义对象，包含管道的所有配置和组件
+     * @return 返回组装后的管道执行对象
+     */
     public PipelineExecution compose(PipelineDef pipelineDef) {
+        // 设置并行度
         int parallelism = pipelineDef.getConfig().get(PipelineOptions.PIPELINE_PARALLELISM);
         env.getConfig().setParallelism(parallelism);
 
-        // Build Source Operator
+        // 构建源操作符
         DataSourceTranslator sourceTranslator = new DataSourceTranslator();
         DataStream<Event> stream =
                 sourceTranslator.translate(pipelineDef.getSource(), env, pipelineDef.getConfig());
 
-        // Build TransformSchemaOperator for processing Schema Event
+        // 构建TransformSchemaOperator用于处理Schema事件
         TransformTranslator transformTranslator = new TransformTranslator();
         stream = transformTranslator.translateSchema(stream, pipelineDef.getTransforms());
 
-        // Schema operator
+        // 构建Schema操作符
         SchemaOperatorTranslator schemaOperatorTranslator =
                 new SchemaOperatorTranslator(
                         pipelineDef
@@ -117,7 +124,7 @@ public class FlinkPipelineComposer implements PipelineComposer {
         OperatorIDGenerator schemaOperatorIDGenerator =
                 new OperatorIDGenerator(schemaOperatorTranslator.getSchemaOperatorUid());
 
-        // Build TransformDataOperator for processing Data Event
+        // 构建TransformDataOperator用于处理数据事件
         stream =
                 transformTranslator.translateData(
                         stream,
@@ -125,14 +132,15 @@ public class FlinkPipelineComposer implements PipelineComposer {
                         schemaOperatorIDGenerator.generate(),
                         pipelineDef.getConfig().get(PipelineOptions.PIPELINE_LOCAL_TIME_ZONE));
 
-        // Build DataSink in advance as schema operator requires MetadataApplier
+        // 提前构建DataSink，因为Schema操作符需要MetadataApplier
         DataSink dataSink = createDataSink(pipelineDef.getSink(), pipelineDef.getConfig());
 
+        // 应用Schema操作
         stream =
                 schemaOperatorTranslator.translate(
                         stream, parallelism, dataSink.getMetadataApplier(), pipelineDef.getRoute());
 
-        // Build Partitioner used to shuffle Event
+        // 构建Partitioner用于事件的洗牌
         PartitioningTranslator partitioningTranslator = new PartitioningTranslator();
         stream =
                 partitioningTranslator.translate(
@@ -142,14 +150,15 @@ public class FlinkPipelineComposer implements PipelineComposer {
                         schemaOperatorIDGenerator.generate(),
                         dataSink.getDataChangeEventHashFunctionProvider());
 
-        // Build Sink Operator
+        // 构建Sink操作符
         DataSinkTranslator sinkTranslator = new DataSinkTranslator();
         sinkTranslator.translate(
                 pipelineDef.getSink(), stream, dataSink, schemaOperatorIDGenerator.generate());
 
-        // Add framework JARs
+        // 添加框架的JAR文件
         addFrameworkJars();
 
+        // 返回组装后的管道执行对象
         return new FlinkPipelineExecution(
                 env, pipelineDef.getConfig().get(PipelineOptions.PIPELINE_NAME), isBlocking);
     }

@@ -197,42 +197,56 @@ public class MySqlSourceEnumerator implements SplitEnumerator<MySqlSplit, Pendin
 
     // ------------------------------------------------------------------------------------------
 
+    /**
+     * 分配数据分片给等待的读取器
+     * 这个方法遍历所有等待分配数据分片的读取器，并尝试为每个读取器分配一个数据分片
+     * 如果读取器不再注册或者处于空闲状态，它将被移除出等待队列
+     * 如果有可用的数据分片，它将被分配给读取器，否则请求更新binlog分片
+     */
     private void assignSplits() {
+        // 创建一个迭代器用于遍历等待分配数据分片的读取器
         final Iterator<Integer> awaitingReader = readersAwaitingSplit.iterator();
 
+        // 遍历所有等待分配数据分片的读取器
         while (awaitingReader.hasNext()) {
+            // 获取下一个等待分配数据分片的读取器ID
             int nextAwaiting = awaitingReader.next();
-            // if the reader that requested another split has failed in the meantime, remove
-            // it from the list of waiting readers
+            // 如果读取器不再注册，移除它并继续下一个循环
             if (!context.registeredReaders().containsKey(nextAwaiting)) {
                 awaitingReader.remove();
                 continue;
             }
 
+            // 如果满足关闭空闲读取器的条件，发送无更多分片信号，移除它并记录日志
             if (shouldCloseIdleReader(nextAwaiting)) {
-                // close idle readers when snapshot phase finished.
                 context.signalNoMoreSplits(nextAwaiting);
                 awaitingReader.remove();
                 LOG.info("Close idle reader of subtask {}", nextAwaiting);
                 continue;
             }
 
+            // 尝试获取下一个数据分片
             Optional<MySqlSplit> split = splitAssigner.getNext();
             if (split.isPresent()) {
+                // 如果有可用的数据分片，分配给读取器
                 final MySqlSplit mySqlSplit = split.get();
                 context.assignSplit(mySqlSplit, nextAwaiting);
+                // 如果分配的是binlog分片，更新binlog分片任务ID
                 if (mySqlSplit instanceof MySqlBinlogSplit) {
                     this.binlogSplitTaskId = nextAwaiting;
                 }
+                // 移除已经分配数据分片的读取器
                 awaitingReader.remove();
+                // 记录分配数据分片的日志
                 LOG.info("The enumerator assigns split {} to subtask {}", mySqlSplit, nextAwaiting);
             } else {
-                // there is no available splits by now, skip assigning
+                // 如果没有可用的数据分片，请求更新binlog分片并结束循环
                 requestBinlogSplitUpdateIfNeed();
                 break;
             }
         }
     }
+
 
     private boolean shouldCloseIdleReader(int nextAwaiting) {
         // When no unassigned split anymore, Signal NoMoreSplitsEvent to awaiting reader in two

@@ -160,21 +160,29 @@ public class MySqlSource<T>
     @Override
     public SourceReader<T, MySqlSplit> createReader(SourceReaderContext readerContext)
             throws Exception {
-        // create source config for the given subtask (e.g. unique server id)
+        // 根据当前子任务的索引创建唯一的source config（例如，唯一的服务器ID）
         MySqlSourceConfig sourceConfig =
                 configFactory.createConfig(readerContext.getIndexOfSubtask());
+
+        // 创建一个队列，用于存储将要处理的记录元素
         FutureCompletingBlockingQueue<RecordsWithSplitIds<SourceRecords>> elementsQueue =
                 new FutureCompletingBlockingQueue<>();
 
+        // 通过反射获取MetricGroup，因为SourceReaderContext不直接提供此方法
         final Method metricGroupMethod = readerContext.getClass().getMethod("metricGroup");
         metricGroupMethod.setAccessible(true);
         final MetricGroup metricGroup = (MetricGroup) metricGroupMethod.invoke(readerContext);
 
+        // 创建并注册Metrics，用于监控SourceReader的性能
         final MySqlSourceReaderMetrics sourceReaderMetrics =
                 new MySqlSourceReaderMetrics(metricGroup);
         sourceReaderMetrics.registerMetrics();
+
+        // 包装SourceReaderContext，为其添加特定于MySql的功能
         MySqlSourceReaderContext mySqlSourceReaderContext =
                 new MySqlSourceReaderContext(readerContext);
+
+        // 创建一个供应者，它会在需要时提供新的MySqlSplitReader实例
         Supplier<MySqlSplitReader> splitReaderSupplier =
                 () ->
                         new MySqlSplitReader(
@@ -182,6 +190,8 @@ public class MySqlSource<T>
                                 readerContext.getIndexOfSubtask(),
                                 mySqlSourceReaderContext,
                                 snapshotHooks);
+
+        // 返回一个新的MySqlSourceReader实例，它负责协调读取和处理数据
         return new MySqlSourceReader<>(
                 elementsQueue,
                 splitReaderSupplier,
@@ -190,6 +200,7 @@ public class MySqlSource<T>
                 mySqlSourceReaderContext,
                 sourceConfig);
     }
+
 
     @Override
     public SplitEnumerator<MySqlSplit, PendingSplitsState> createEnumerator(

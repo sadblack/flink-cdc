@@ -38,6 +38,22 @@ limitations under the License.
             <artifactId>flink-cdc-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>8.0.27</version> <!-- 请检查是否有更新的版本 -->
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-cdc-pipeline-connector-mysql</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-cdc-pipeline-connector-doris</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- YAML parser utilities -->
         <dependency>
             <groupId>org.snakeyaml</groupId>
