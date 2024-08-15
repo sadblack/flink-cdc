@@ -68,8 +68,8 @@ import java.util.function.Predicate;
 public class BinlogSplitReader implements DebeziumReader<SourceRecords, MySqlSplit> {
 
     private static final Logger LOG = LoggerFactory.getLogger(BinlogSplitReader.class);
-    private final StatefulTaskContext statefulTaskContext;
-    private final ExecutorService executorService;
+    private StatefulTaskContext statefulTaskContext;
+    private ExecutorService executorService;
 
     private volatile ChangeEventQueue<DataChangeEvent> queue;
     private volatile boolean currentTaskRunning;
@@ -80,12 +80,31 @@ public class BinlogSplitReader implements DebeziumReader<SourceRecords, MySqlSpl
     private Map<TableId, List<FinishedSnapshotSplitInfo>> finishedSplitsInfo;
     // tableId -> the max splitHighWatermark
     private Map<TableId, BinlogOffset> maxSplitHighWatermarkMap;
-    private final Set<TableId> pureBinlogPhaseTables;
+    private Set<TableId> pureBinlogPhaseTables;
     private Tables.TableFilter capturedTableFilter;
     private final StoppableChangeEventSourceContext changeEventSourceContext =
             new StoppableChangeEventSourceContext();
 
     private static final long READER_CLOSE_TIMEOUT = 30L;
+
+    public BinlogSplitReader() {
+    }
+
+    public void setStatefulTaskContext(StatefulTaskContext statefulTaskContext) {
+        this.statefulTaskContext = statefulTaskContext;
+    }
+
+    public void setExecutorService(ExecutorService executorService) {
+        this.executorService = executorService;
+    }
+
+    public void setCurrentTaskRunning(boolean currentTaskRunning) {
+        this.currentTaskRunning = currentTaskRunning;
+    }
+
+    public void setPureBinlogPhaseTables(Set<TableId> pureBinlogPhaseTables) {
+        this.pureBinlogPhaseTables = pureBinlogPhaseTables;
+    }
 
     public BinlogSplitReader(StatefulTaskContext statefulTaskContext, int subTaskId) {
         this.statefulTaskContext = statefulTaskContext;

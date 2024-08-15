@@ -28,6 +28,9 @@ import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.cdc.common.annotation.Internal;
 import org.apache.flink.cdc.common.annotation.PublicEvolving;
 import org.apache.flink.cdc.common.annotation.VisibleForTesting;
+import org.apache.flink.cdc.common.event.Event;
+import org.apache.flink.cdc.connectors.mysql.CustomProxy;
+import org.apache.flink.cdc.connectors.mysql.MySqlSourceReaderProxy;
 import org.apache.flink.cdc.connectors.mysql.MySqlValidator;
 import org.apache.flink.cdc.connectors.mysql.debezium.DebeziumUtils;
 import org.apache.flink.cdc.connectors.mysql.source.assigners.MySqlBinlogSplitAssigner;
@@ -51,6 +54,7 @@ import org.apache.flink.cdc.connectors.mysql.source.split.MySqlSplitState;
 import org.apache.flink.cdc.connectors.mysql.source.split.SourceRecords;
 import org.apache.flink.cdc.connectors.mysql.source.utils.hooks.SnapshotPhaseHooks;
 import org.apache.flink.cdc.debezium.DebeziumDeserializationSchema;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.source.reader.RecordEmitter;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.synchronization.FutureCompletingBlockingQueue;
@@ -63,6 +67,7 @@ import io.debezium.jdbc.JdbcConnection;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
@@ -101,9 +106,24 @@ public class MySqlSource<T>
 
     private static final String ENUMERATOR_SERVER_NAME = "mysql_source_split_enumerator";
 
-    private final MySqlSourceConfigFactory configFactory;
-    private final DebeziumDeserializationSchema<T> deserializationSchema;
-    private final RecordEmitterSupplier<T> recordEmitterSupplier;
+    private MySqlSourceConfigFactory configFactory;
+    private DebeziumDeserializationSchema<T> deserializationSchema;
+    private RecordEmitterSupplier<T> recordEmitterSupplier;
+
+    public MySqlSource() {
+    }
+
+    public void setConfigFactory(MySqlSourceConfigFactory configFactory) {
+        this.configFactory = configFactory;
+    }
+
+    public void setDeserializationSchema(DebeziumDeserializationSchema<T> deserializationSchema) {
+        this.deserializationSchema = deserializationSchema;
+    }
+
+    public void setRecordEmitterSupplier(RecordEmitterSupplier<T> recordEmitterSupplier) {
+        this.recordEmitterSupplier = recordEmitterSupplier;
+    }
 
     // Actions to perform during the snapshot phase.
     // This field is introduced for testing purpose, for example testing if changes made in the
@@ -157,6 +177,11 @@ public class MySqlSource<T>
         }
     }
 
+    /*
+    从 SplitEnumerator 拉取 split
+    1.什么时候拉取
+    2.拉取后根据不同类型，分别是怎么处理的
+     */
     @Override
     public SourceReader<T, MySqlSplit> createReader(SourceReaderContext readerContext)
             throws Exception {
@@ -190,18 +215,32 @@ public class MySqlSource<T>
                                 readerContext.getIndexOfSubtask(),
                                 mySqlSourceReaderContext,
                                 snapshotHooks);
-
-        // 返回一个新的MySqlSourceReader实例，它负责协调读取和处理数据
-        return new MySqlSourceReader<>(
+        RecordEmitter<SourceRecords, T, MySqlSplitState> emitter = recordEmitterSupplier.get(sourceReaderMetrics, sourceConfig);
+        Configuration configuration = readerContext.getConfiguration();
+        MySqlSourceReader<T> sourceReader = new MySqlSourceReader<>(
                 elementsQueue,
                 splitReaderSupplier,
-                recordEmitterSupplier.get(sourceReaderMetrics, sourceConfig),
-                readerContext.getConfiguration(),
+                emitter,
+                configuration,
                 mySqlSourceReaderContext,
                 sourceConfig);
+        // 返回一个新的MySqlSourceReader实例，它负责协调读取和处理数据
+        return new MySqlSourceReaderProxy<>(sourceReader).getProxy(
+                elementsQueue,
+                splitReaderSupplier,
+                emitter,
+                configuration,
+                mySqlSourceReaderContext,
+                sourceConfig
+        );
     }
 
 
+    /*
+    连接数据源，产生 split，提供给 reader
+    1.怎么产生 split
+    2.分配给 reader 的策略
+     */
     @Override
     public SplitEnumerator<MySqlSplit, PendingSplitsState> createEnumerator(
             SplitEnumeratorContext<MySqlSplit> enumContext) {
@@ -227,9 +266,18 @@ public class MySqlSource<T>
         } else {
             splitAssigner = new MySqlBinlogSplitAssigner(sourceConfig);
         }
+        Boundedness boundedness = getBoundedness();
+        MySqlSourceEnumerator enumerator = new MySqlSourceEnumerator(
+                enumContext, sourceConfig, splitAssigner, boundedness);
 
-        return new MySqlSourceEnumerator(
-                enumContext, sourceConfig, splitAssigner, getBoundedness());
+        return new CustomProxy<>(enumerator).getProxy(en -> {
+            en.setContext(enumContext);
+            en.setSourceConfig(sourceConfig);
+            en.setSplitAssigner(splitAssigner);
+            en.setBoundedness(boundedness);
+            en.setReadersAwaitingSplit(new TreeSet<>());
+            return en;
+        });
     }
 
     @Override

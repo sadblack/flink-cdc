@@ -24,6 +24,7 @@ import org.apache.flink.cdc.common.source.DataSource;
 import org.apache.flink.cdc.common.source.EventSourceProvider;
 import org.apache.flink.cdc.common.source.FlinkSourceProvider;
 import org.apache.flink.cdc.common.source.MetadataAccessor;
+import org.apache.flink.cdc.connectors.mysql.CustomProxy;
 import org.apache.flink.cdc.connectors.mysql.source.config.MySqlSourceConfig;
 import org.apache.flink.cdc.connectors.mysql.source.config.MySqlSourceConfigFactory;
 import org.apache.flink.cdc.connectors.mysql.source.reader.MySqlPipelineRecordEmitter;
@@ -67,9 +68,17 @@ public class MySqlDataSource implements DataSource {
                                 new MySqlPipelineRecordEmitter(
                                         deserializer, sourceReaderMetrics, sourceConfig));
 
+        MySqlSource<Event> proxy = new CustomProxy<>(source).getProxy(t -> {
+            t.setConfigFactory(configFactory);
+            t.setDeserializationSchema(deserializer);
+            t.setRecordEmitterSupplier((sourceReaderMetrics, sourceConfig) ->
+                    new MySqlPipelineRecordEmitter(
+                            deserializer, sourceReaderMetrics, sourceConfig));
+            return t;
+        });
         // 返回一个事件源提供者，它包装了上述创建的MySql源实例
         // 该提供者负责将MySql源集成到Flink中，使Flink能够从MySql数据库中消费事件
-        return FlinkSourceProvider.of(source);
+        return FlinkSourceProvider.of(proxy);
     }
 
     @Override

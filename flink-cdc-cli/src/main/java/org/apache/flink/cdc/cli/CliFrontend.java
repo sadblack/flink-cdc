@@ -17,6 +17,8 @@
 
 package org.apache.flink.cdc.cli;
 
+import org.apache.commons.cli.*;
+import org.apache.flink.api.connector.source.SplitEnumerator;
 import org.apache.flink.cdc.cli.utils.ConfigurationUtils;
 import org.apache.flink.cdc.cli.utils.FlinkEnvironmentUtils;
 import org.apache.flink.cdc.common.annotation.VisibleForTesting;
@@ -26,7 +28,6 @@ import org.apache.flink.runtime.jobgraph.RestoreMode;
 import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 
-import org.apache.commons.cli.CommandLine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,6 +37,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.cdc.cli.CliFrontendOptions.SAVEPOINT_ALLOW_NON_RESTORED_OPTION;
@@ -56,7 +60,7 @@ public class CliFrontend {
     private static final Integer LIMIT_COUNT = 10;
     private static Connection conn1;
     private static Connection conn_source;
-
+    private static ScheduledExecutorService pool = Executors.newSingleThreadScheduledExecutor();
     static {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
@@ -77,28 +81,31 @@ public class CliFrontend {
     }
 
     public static void main(String[] args) throws Exception {
+        //开启数据同步
+        pool.scheduleWithFixedDelay(() -> {
+            sinkData(fetchData());
+            delData();
+        }, 0, 1000, java.util.concurrent.TimeUnit.MILLISECONDS);
 
-        sinkData(fetchData());
-        delData();
 
-//        Options cliOptions = CliFrontendOptions.initializeOptions();
-//        CommandLineParser parser = new DefaultParser();
-//        CommandLine commandLine = parser.parse(cliOptions, args);
-//
-//        // Help message
-//        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
-//            HelpFormatter formatter = new HelpFormatter();
-//            formatter.setLeftPadding(4);
-//            formatter.setWidth(80);
-//            formatter.printHelp(" ", cliOptions);
-//            return;
-//        }
-//
-//        // Create executor and execute the pipeline
-//        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
-//
-//        // Print execution result
-//        printExecutionInfo(result);
+        Options cliOptions = CliFrontendOptions.initializeOptions();
+        CommandLineParser parser = new DefaultParser();
+        CommandLine commandLine = parser.parse(cliOptions, args);
+
+        // Help message
+        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.setLeftPadding(4);
+            formatter.setWidth(80);
+            formatter.printHelp(" ", cliOptions);
+            return;
+        }
+
+        // Create executor and execute the pipeline
+        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
+
+        // Print execution result
+        printExecutionInfo(result);
     }
 
     @VisibleForTesting
@@ -265,10 +272,7 @@ public class CliFrontend {
             // 执行批处理
             int[] affectedRows = pstmt.executeBatch();
 
-            // 输出受影响的行数（可选）
-            for (int i = 0; i < affectedRows.length; i++) {
-                System.out.println("第 " + (i + 1) + " 条数据插入成功，影响了 " + affectedRows[i] + " 行");
-            }
+            System.out.println("成功插入了 " + affectedRows.length + " 行数据。");
 
             // 注意：这里不需要显式关闭pstmt和conn，因为使用了try-with-resources语句
         } catch (SQLException e) {

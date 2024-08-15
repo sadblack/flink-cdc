@@ -30,7 +30,11 @@ limitations under the License.
     <packaging>jar</packaging>
 
     <dependencies>
-
+        <dependency>
+            <groupId>cglib</groupId>
+            <artifactId>cglib</artifactId>
+            <version>3.3.0</version>
+        </dependency>
         <!-- Debezium dependencies -->
         <dependency>
             <groupId>org.apache.flink</groupId>

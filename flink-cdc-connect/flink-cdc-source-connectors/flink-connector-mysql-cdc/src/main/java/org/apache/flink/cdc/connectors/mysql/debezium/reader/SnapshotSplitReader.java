@@ -73,9 +73,9 @@ import java.util.stream.Collectors;
 public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlSplit> {
 
     private static final Logger LOG = LoggerFactory.getLogger(SnapshotSplitReader.class);
-    private final StatefulTaskContext statefulTaskContext;
-    private final ExecutorService executorService;
-    private final SnapshotPhaseHooks hooks;
+    private StatefulTaskContext statefulTaskContext;
+    private ExecutorService executorService;
+    private SnapshotPhaseHooks hooks;
 
     private volatile ChangeEventQueue<DataChangeEvent> queue;
     private volatile boolean currentTaskRunning;
@@ -92,6 +92,33 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
             new StoppableChangeEventSourceContext();
 
     private static final long READER_CLOSE_TIMEOUT = 30L;
+
+    public SnapshotSplitReader() {
+    }
+
+    public void setStatefulTaskContext(StatefulTaskContext statefulTaskContext) {
+        this.statefulTaskContext = statefulTaskContext;
+    }
+
+    public void setExecutorService(ExecutorService executorService) {
+        this.executorService = executorService;
+    }
+
+    public void setHooks(SnapshotPhaseHooks hooks) {
+        this.hooks = hooks;
+    }
+
+    public void setCurrentTaskRunning(boolean currentTaskRunning) {
+        this.currentTaskRunning = currentTaskRunning;
+    }
+
+    public void setHasNextElement(AtomicBoolean hasNextElement) {
+        this.hasNextElement = hasNextElement;
+    }
+
+    public void setReachEnd(AtomicBoolean reachEnd) {
+        this.reachEnd = reachEnd;
+    }
 
     public SnapshotSplitReader(
             StatefulTaskContext statefulTaskContext, int subtaskId, SnapshotPhaseHooks hooks) {
@@ -361,7 +388,7 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
                         lowWatermark));
     }
 
-    private void setReadException(Throwable throwable) {
+    public void setReadException(Throwable throwable) {
         stopCurrentTask();
         LOG.error(
                 String.format(

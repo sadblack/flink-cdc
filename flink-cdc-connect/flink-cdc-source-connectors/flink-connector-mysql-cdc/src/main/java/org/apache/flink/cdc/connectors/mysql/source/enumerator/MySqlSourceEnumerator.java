@@ -68,17 +68,41 @@ public class MySqlSourceEnumerator implements SplitEnumerator<MySqlSplit, Pendin
     private static final Logger LOG = LoggerFactory.getLogger(MySqlSourceEnumerator.class);
     private static final long CHECK_EVENT_INTERVAL = 30_000L;
 
-    private final SplitEnumeratorContext<MySqlSplit> context;
-    private final MySqlSourceConfig sourceConfig;
-    private final MySqlSplitAssigner splitAssigner;
+    private SplitEnumeratorContext<MySqlSplit> context;
+    private MySqlSourceConfig sourceConfig;
+    private MySqlSplitAssigner splitAssigner;
 
-    private final Boundedness boundedness;
+    private Boundedness boundedness;
 
     // using TreeSet to prefer assigning binlog split to task-0 for easier debug
-    private final TreeSet<Integer> readersAwaitingSplit;
+    private TreeSet<Integer> readersAwaitingSplit;
     private List<List<FinishedSnapshotSplitInfo>> binlogSplitMeta;
 
     @Nullable private Integer binlogSplitTaskId;
+
+
+    public MySqlSourceEnumerator() {
+    }
+
+    public void setContext(SplitEnumeratorContext<MySqlSplit> context) {
+        this.context = context;
+    }
+
+    public void setSourceConfig(MySqlSourceConfig sourceConfig) {
+        this.sourceConfig = sourceConfig;
+    }
+
+    public void setSplitAssigner(MySqlSplitAssigner splitAssigner) {
+        this.splitAssigner = splitAssigner;
+    }
+
+    public void setBoundedness(Boundedness boundedness) {
+        this.boundedness = boundedness;
+    }
+
+    public void setReadersAwaitingSplit(TreeSet<Integer> readersAwaitingSplit) {
+        this.readersAwaitingSplit = readersAwaitingSplit;
+    }
 
     public MySqlSourceEnumerator(
             SplitEnumeratorContext<MySqlSplit> context,
