@@ -11,10 +11,16 @@
             <PatternLayout pattern="%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36}  - %msg%n"/>
         </console>
 
+        <File name="File" fileName="logs/app.log">
+            <PatternLayout>
+                <Pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36}  - %msg%n</Pattern>
+            </PatternLayout>
+        </File>
     </appenders>
     <loggers>
         <root level="all">
-<!--            <appender-ref ref="Console"/>-->
+            <appender-ref ref="Console"/>
+            <AppenderRef ref="File"/>
         </root>
     </loggers>
 </configuration>

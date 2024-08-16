@@ -114,8 +114,7 @@ public class MySqlChunkSplitter implements ChunkSplitter {
             throws Exception {
         if (!hasNextChunk()) {
             analyzeTable(partition, tableId);
-            Optional<List<MySqlSnapshotSplit>> evenlySplitChunks =
-                    trySplitAllEvenlySizedChunks(partition, tableId);
+            Optional<List<MySqlSnapshotSplit>> evenlySplitChunks = trySplitAllEvenlySizedChunks(partition, tableId);
             if (evenlySplitChunks.isPresent()) {
                 return evenlySplitChunks.get();
             } else {
@@ -142,16 +141,16 @@ public class MySqlChunkSplitter implements ChunkSplitter {
 
     /** Analyze the meta information for given table. */
     private void analyzeTable(MySqlPartition partition, TableId tableId) {
-        try {
+        try {//连接数据库获取建表语句，然后解析出所有 列，列类型，主键，编码格式，封装到 currentSplittingTable
             currentSplittingTable =
                     mySqlSchema.getTableSchema(partition, jdbcConnection, tableId).getTable();
-            splitColumn =
+            splitColumn =//获取主键
                     ChunkUtils.getChunkKeyColumn(
                             currentSplittingTable, sourceConfig.getChunkKeyColumns());
-            splitType = ChunkUtils.getChunkKeyColumnType(splitColumn);
+            splitType = ChunkUtils.getChunkKeyColumnType(splitColumn);//类型
             minMaxOfSplitColumn =
-                    StatementUtils.queryMinMax(jdbcConnection, tableId, splitColumn.name());
-            approximateRowCnt = StatementUtils.queryApproximateRowCnt(jdbcConnection, tableId);
+                    StatementUtils.queryMinMax(jdbcConnection, tableId, splitColumn.name());//获取最小值和最大值
+            approximateRowCnt = StatementUtils.queryApproximateRowCnt(jdbcConnection, tableId);//近似行数
         } catch (Exception e) {
             throw new RuntimeException("Fail to analyze table in chunk splitter.", e);
         }
@@ -160,7 +159,7 @@ public class MySqlChunkSplitter implements ChunkSplitter {
     /** Generates one snapshot split (chunk) for the give table path. */
     private MySqlSnapshotSplit splitOneUnevenlySizedChunk(MySqlPartition partition, TableId tableId)
             throws SQLException {
-        final int chunkSize = sourceConfig.getSplitSize();
+        final int chunkSize = sourceConfig.getSplitSize();//根据配置文件里的 chunkSize，进行切分
         final Object chunkStartVal = nextChunkStart.getValue();
         LOG.info(
                 "Use unevenly-sized chunks for table {}, the chunk size is {} from {}",
@@ -181,7 +180,7 @@ public class MySqlChunkSplitter implements ChunkSplitter {
                         minMaxOfSplitColumn[1],
                         chunkSize);
         // may sleep a while to avoid DDOS on MySQL server
-        maySleep(nextChunkId, tableId);
+        maySleep(nextChunkId, tableId);//每切分十次，暂停 0.1s，并打印日志
         if (chunkEnd != null && ObjectUtils.compare(chunkEnd, minMaxOfSplitColumn[1]) <= 0) {
             nextChunkStart = ChunkSplitterState.ChunkBound.middleOf(chunkEnd);
             return createSnapshotSplit(
@@ -215,7 +214,7 @@ public class MySqlChunkSplitter implements ChunkSplitter {
      */
     private Optional<List<MySqlSnapshotSplit>> trySplitAllEvenlySizedChunks(
             MySqlPartition partition, TableId tableId) {
-        LOG.debug("Try evenly splitting table {} into chunks", tableId);
+        LOG.debug("Try evenly splitting table {} into chunks", tableId);//尝试均匀分割
         final Object min = minMaxOfSplitColumn[0];
         final Object max = minMaxOfSplitColumn[1];
         if (min == null || max == null || min.equals(max)) {
@@ -235,7 +234,7 @@ public class MySqlChunkSplitter implements ChunkSplitter {
                             tableId, min, max, approximateRowCnt, chunkSize, dynamicChunkSize);
             return Optional.of(generateSplits(partition, tableId, chunks));
         } else {
-            LOG.debug("beginning unevenly splitting table {} into chunks", tableId);
+            LOG.debug("beginning unevenly splitting table {} into chunks", tableId);//如果不能均匀分割，就进行非均匀分割
             return Optional.empty();
         }
     }

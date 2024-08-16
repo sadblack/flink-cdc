@@ -109,6 +109,7 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
 
     private MySqlRecords pollSplitRecords() throws InterruptedException {
         Iterator<SourceRecords> dataIt;
+        //currentReader 什么时候设置
         if (currentReader == null) {
             // (1) Reads binlog split firstly and then read snapshot split
             if (binlogSplits.size() > 0) {

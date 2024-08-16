@@ -300,7 +300,7 @@ public class MySqlSourceReader<T>
         }
         // notify split enumerator again about the finished unacked snapshot splits
         reportFinishedSnapshotSplitsIfNeed();
-        // add all un-finished splits (including binlog split) to SourceReaderBase
+        // add all un-finished splits (including binlog split) to SourceReaderBase   把新收到的 splits 放到 SourceReaderBase 里
         if (!unfinishedSplits.isEmpty()) {
             super.addSplits(unfinishedSplits);
         } else if (suspendedBinlogSplit

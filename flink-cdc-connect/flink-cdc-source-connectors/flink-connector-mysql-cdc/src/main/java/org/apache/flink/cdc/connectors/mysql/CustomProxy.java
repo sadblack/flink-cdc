@@ -49,7 +49,7 @@ public class CustomProxy<T> implements MethodInterceptor, Serializable {
             }
             s.append(String.format(fromat, typeName, value));
         }
-        System.out.println(s);
+//        System.out.println(s);
         return proxy.invokeSuper(obj, args);
     }
 

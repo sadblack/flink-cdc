@@ -171,10 +171,10 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
 
     @Override
     public void open() {
-        chunkSplitter.open();
-        discoveryCaptureTables();
-        captureNewlyAddedTables();
-        startAsynchronouslySplit();
+        chunkSplitter.open();//连接jdbc
+        discoveryCaptureTables();//获取所有表
+        captureNewlyAddedTables();//获取新加进来的表
+        startAsynchronouslySplit();//把表切分成 splits，放到 remainingSplits 里
     }
 
     private void discoveryCaptureTables() {
@@ -287,6 +287,7 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
                         new ThreadFactoryBuilder().setNameFormat("snapshot-splitting").build();
                 this.executor = Executors.newSingleThreadExecutor(threadFactory);
             }
+            //异步地 把所有表切分成 splits， 放到 remainingSplits 里
             executor.submit(this::splitChunksForRemainingTables);
         }
     }
@@ -306,7 +307,7 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
                     throw new IllegalStateException(
                             "Error when splitting chunks for " + nextTable, e);
                 }
-
+                //如果是刚处理的表，把表结构信息保存到 tableSchemas 里
                 if (!hasRecordSchema && !splits.isEmpty()) {
                     hasRecordSchema = true;
                     final Map<TableId, TableChanges.TableChange> tableSchema = new HashMap<>();
@@ -318,7 +319,7 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
                                 .map(MySqlSnapshotSplit::toSchemalessSnapshotSplit)
                                 .collect(Collectors.toList());
                 chunkNum += splits.size();
-                remainingSplits.addAll(schemaLessSnapshotSplits);
+                remainingSplits.addAll(schemaLessSnapshotSplits);//把切分好的 splits 保存到 remainingSplits 里
                 if (!chunkSplitter.hasNextChunk()) {
                     remainingTables.remove(nextTable);
                 }
@@ -330,7 +331,7 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
                 "Split table {} into {} chunks, time cost: {}ms.",
                 nextTable,
                 chunkNum,
-                end - start);
+                end - start);//打印日志，一共产生了多少个 chunks
     }
 
     @Override
@@ -342,8 +343,8 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
                 // return remaining splits firstly
                 Iterator<MySqlSchemalessSnapshotSplit> iterator = remainingSplits.iterator();
                 MySqlSchemalessSnapshotSplit split = iterator.next();
-                remainingSplits.remove(split);
-                assignedSplits.put(split.splitId(), split);
+                remainingSplits.remove(split);//从待分配队列移除
+                assignedSplits.put(split.splitId(), split);//放到已分配队列
                 addAlreadyProcessedTablesIfNotExists(split.getTableId());
                 return Optional.of(
                         split.toMySqlSnapshotSplit(tableSchemas.get(split.getTableId())));
@@ -563,7 +564,7 @@ public class MySqlSnapshotSplitAssigner implements MySqlSplitAssigner {
                 splitTable(chunkSplitter.getCurrentSplittingTableId());
             }
 
-            // split the remaining tables
+            // split the remaining tables  把每张表都切分为 splits，切分完成后会把表从 remainingTables 里移除
             for (TableId nextTable : remainingTables) {
                 splitTable(nextTable);
             }

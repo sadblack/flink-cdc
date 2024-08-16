@@ -233,7 +233,7 @@ public class MySqlSourceEnumerator implements SplitEnumerator<MySqlSplit, Pendin
 
         // 遍历所有等待分配数据分片的读取器
         while (awaitingReader.hasNext()) {
-            // 获取下一个等待分配数据分片的读取器ID
+            // 获取下一个等待分配数据分片的 splitReader id
             int nextAwaiting = awaitingReader.next();
             // 如果读取器不再注册，移除它并继续下一个循环
             if (!context.registeredReaders().containsKey(nextAwaiting)) {

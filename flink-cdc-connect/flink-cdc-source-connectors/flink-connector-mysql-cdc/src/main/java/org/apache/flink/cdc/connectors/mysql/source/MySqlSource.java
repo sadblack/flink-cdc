@@ -181,6 +181,10 @@ public class MySqlSource<T>
     从 SplitEnumerator 拉取 split
     1.什么时候拉取
     2.拉取后根据不同类型，分别是怎么处理的
+    3.MySqlSplitReader 有什么用
+    4.RecordEmitter 有什么用
+    5.SourceRecords 和 MySqlSplit 各有什么作用
+
      */
     @Override
     public SourceReader<T, MySqlSplit> createReader(SourceReaderContext readerContext)
@@ -189,7 +193,7 @@ public class MySqlSource<T>
         MySqlSourceConfig sourceConfig =
                 configFactory.createConfig(readerContext.getIndexOfSubtask());
 
-        // 创建一个队列，用于存储将要处理的记录元素
+        // 看起来这里保存的是 元数据信息
         FutureCompletingBlockingQueue<RecordsWithSplitIds<SourceRecords>> elementsQueue =
                 new FutureCompletingBlockingQueue<>();
 

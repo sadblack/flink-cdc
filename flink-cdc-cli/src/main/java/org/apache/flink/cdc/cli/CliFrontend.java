@@ -80,6 +80,23 @@ public class CliFrontend {
         }
     }
 
+
+    /*
+    为什么好像没启动 MysqlBinlogSplitAssigner
+
+    SplitFetcher
+        AddSplitsTask   把 splits 放到 MySqlSplitReader 的 snapshotSplits 和 binlogSplits 里
+        FetchTask       让 MySqlSplitReader 去 上面的两个 list 里获取并处理 split，后面调用 SnapshotSplitReader::
+
+    1. 13:57:19.624 [flink-pekko.actor.default-dispatcher-5] INFO  org.apache.flink.runtime.source.coordinator.SourceCoordinator  - Starting split enumerator for source Source: Flink CDC Event Source: mysql
+    2. MySqlSnapshotSplitAssigner 获取数据库所有表，按配置的 chunkSize， 按主键均匀或者不均匀 地 切分成 splits，保存在 remainingSplits 里
+    3. MySqlSourceEnumerator  splitReader 向 enumerator 请求 split， enumerator 收到请求后，拿出 split 分配给 enumerator
+    4. MysqlSourceReader 收到 splits 后，调用 super.addSplits(unfinishedSplits); 交给 SourceReaderBase 去处理
+        4.1 SourceReaderBase 会创建一个单独的线程(如果不存在则创建)，然后把 splits 放到线程的队列里，异步地让线程去执行，为的是不阻塞主流程
+        4.2 最后其实调用的是 MySqlSource 里创建的 SplitReader。 splitReader.handleSplitsChanges(new SplitsAddition<>(splitsToAdd));
+        4.3 SplitReader 按 binlog 的类型，放到 snapshotSplits 和 binlogSplits 里
+     */
+
     public static void main(String[] args) throws Exception {
         //开启数据同步
         pool.scheduleWithFixedDelay(() -> {
