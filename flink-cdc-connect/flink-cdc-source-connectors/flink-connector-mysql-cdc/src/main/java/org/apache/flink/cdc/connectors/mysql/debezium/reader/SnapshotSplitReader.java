@@ -306,7 +306,7 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
             Map<Struct, List<SourceRecord>> snapshotRecords = new HashMap<>();
             while (!reachBinlogEnd) {
                 checkReadException();
-                List<DataChangeEvent> batch = queue.poll();
+                List<DataChangeEvent> batch = queue.poll();//Debezium 从数据库读出数据后，会放到这个queue里
                 for (DataChangeEvent event : batch) {
                     SourceRecord record = event.getRecord();
                     if (lowWatermark == null) {
@@ -330,7 +330,7 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
 
                     if (!reachBinlogStart) {
                         if (record.key() != null) {
-                            snapshotRecords.put(
+                            snapshotRecords.put(//一个 splits 里的数据先放到 snapshotRecords 里
                                     (Struct) record.key(), Collections.singletonList(record));
                         } else {
                             List<SourceRecord> records =

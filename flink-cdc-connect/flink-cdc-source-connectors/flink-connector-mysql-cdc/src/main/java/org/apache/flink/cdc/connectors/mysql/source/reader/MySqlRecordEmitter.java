@@ -63,7 +63,7 @@ public class MySqlRecordEmitter<T> implements RecordEmitter<SourceRecords, T, My
         this.includeSchemaChanges = includeSchemaChanges;
         this.outputCollector = new OutputCollector<>();
     }
-
+    //sourceRecords 里是处理好的所有记录
     @Override
     public void emitRecord(
             SourceRecords sourceRecords, SourceOutput<T> output, MySqlSplitState splitState)

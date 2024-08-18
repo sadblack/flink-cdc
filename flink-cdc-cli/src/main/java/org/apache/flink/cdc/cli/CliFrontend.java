@@ -84,7 +84,10 @@ public class CliFrontend {
     /*
     为什么好像没启动 MysqlBinlogSplitAssigner
 
-    SplitFetcher
+    SplitFetcher runOnce()
+        如果 !taskQueue.isEmpty() 运行 addTask，并把 task 放入 assignedSplits。
+        如果 !assignedSplits.isEmpty() 运行 fetchTask
+
         AddSplitsTask   把 splits 放到 MySqlSplitReader 的 snapshotSplits 和 binlogSplits 里
         FetchTask       让 MySqlSplitReader 去 上面的两个 list 里获取并处理 split，后面调用 SnapshotSplitReader::
 
@@ -92,9 +95,19 @@ public class CliFrontend {
     2. MySqlSnapshotSplitAssigner 获取数据库所有表，按配置的 chunkSize， 按主键均匀或者不均匀 地 切分成 splits，保存在 remainingSplits 里
     3. MySqlSourceEnumerator  splitReader 向 enumerator 请求 split， enumerator 收到请求后，拿出 split 分配给 enumerator
     4. MysqlSourceReader 收到 splits 后，调用 super.addSplits(unfinishedSplits); 交给 SourceReaderBase 去处理
+        4.0 SourceReaderBase 交给 SingleThreadFetcherManager 去处理，manager先创建 fetcher，再把 splits 放到 fetcher的队列里，再把 fetcher 扔到线程池里去执行
+                fetcher 会去循环执行 runOnce()，从队列里拿出任务执行
         4.1 SourceReaderBase 会创建一个单独的线程(如果不存在则创建)，然后把 splits 放到线程的队列里，异步地让线程去执行，为的是不阻塞主流程
         4.2 最后其实调用的是 MySqlSource 里创建的 SplitReader。 splitReader.handleSplitsChanges(new SplitsAddition<>(splitsToAdd));
         4.3 SplitReader 按 binlog 的类型，放到 snapshotSplits 和 binlogSplits 里
+        4.4 然后 SplitFetcher 会执行 FetchTask，最终调用的是 SnapshotSplitReader::submitSplit(MySqlSplit mySqlSplit);
+
+    //流是怎么产生的
+
+
+        MySqlSourceReader::addSplits(unfinishedSplits);
+            MySqlSplitReader::handleSplitsChanges(new SplitsAddition<>(splitsToAdd));
+            snapshotSplits.add(mySqlSplit.asSnapshotSplit());
      */
 
     public static void main(String[] args) throws Exception {
@@ -103,7 +116,6 @@ public class CliFrontend {
             sinkData(fetchData());
             delData();
         }, 0, 1000, java.util.concurrent.TimeUnit.MILLISECONDS);
-
 
         Options cliOptions = CliFrontendOptions.initializeOptions();
         CommandLineParser parser = new DefaultParser();

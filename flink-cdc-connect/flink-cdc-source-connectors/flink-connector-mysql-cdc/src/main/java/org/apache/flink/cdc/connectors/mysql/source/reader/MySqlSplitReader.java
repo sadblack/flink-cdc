@@ -86,7 +86,7 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
     }
 
     @Override
-    public RecordsWithSplitIds<SourceRecords> fetch() throws IOException {
+    public RecordsWithSplitIds<SourceRecords> fetch() throws IOException {//SourceRecords 就是 stream 里的数据
         try {
             suspendBinlogReaderIfNeed();
             return pollSplitRecords();
@@ -106,7 +106,7 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
             LOG.info("Suspend binlog reader to wait the binlog split update.");
         }
     }
-
+    //MySqlRecords 里就是读取并混合封装好的数据
     private MySqlRecords pollSplitRecords() throws InterruptedException {
         Iterator<SourceRecords> dataIt;
         //currentReader 什么时候设置
