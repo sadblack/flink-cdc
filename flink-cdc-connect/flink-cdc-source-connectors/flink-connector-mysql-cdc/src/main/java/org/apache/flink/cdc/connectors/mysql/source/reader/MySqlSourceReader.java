@@ -72,6 +72,15 @@ import java.util.stream.Collectors;
 import static org.apache.flink.cdc.connectors.mysql.source.assigners.MySqlBinlogSplitAssigner.BINLOG_SPLIT_ID;
 
 /** The source reader for MySQL source splits. */
+/*
+sourceReaderBase，
+    pollNext(ReaderOutput<T> output) 把 currentFetch 发送到输出流
+    如果 currentFetch 没有值，调 getNextFetch 从 elementsQueue 里拿
+
+SourceReader
+    SplitFetcher
+    SplitReader
+ */
 public class MySqlSourceReader<T>
         extends SingleThreadMultiplexSourceReaderBase<
                 SourceRecords, T, MySqlSplit, MySqlSplitState> {
@@ -86,6 +95,8 @@ public class MySqlSourceReader<T>
     private volatile MySqlBinlogSplit suspendedBinlogSplit;
 
     public MySqlSourceReader(
+            //这个 queue，sourceReaderBase 的 pollNext 方法会从 elementsQueue 里拿数据， 然后发到输出流里
+            // 什么时候往这个 queue 里 发数据？
             FutureCompletingBlockingQueue<RecordsWithSplitIds<SourceRecords>> elementQueue,
             Supplier<MySqlSplitReader> splitReaderSupplier,
             RecordEmitter<SourceRecords, T, MySqlSplitState> recordEmitter,
@@ -94,7 +105,8 @@ public class MySqlSourceReader<T>
             MySqlSourceConfig sourceConfig) {
         super(
                 elementQueue,
-                new SingleThreadFetcherManager<>(elementQueue, splitReaderSupplier::get),
+                // SingleThreadFetcherManager 的作用               MySqlSplitReader
+                new SingleThreadFetcherManager<>(elementQueue, () -> splitReaderSupplier.get()),
                 recordEmitter,
                 config,
                 context.getSourceReaderContext());

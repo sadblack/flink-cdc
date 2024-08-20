@@ -93,7 +93,20 @@ public class RecordUtils {
         }
     }
 
-    /** upsert binlog events to snapshot events collection. */
+    /**
+     * 根据binlog记录更新快照记录
+     *
+     * 此方法主要用于处理数据变更记录（DCR），根据不同的操作类型（CREATE, UPDATE, DELETE, READ），
+     * 将binlog记录插入或更新到快照记录中相应的位置如果操作类型是READ，则抛出异常，
+     * 因为binlog记录不应该使用READ操作
+     *
+     * @param snapshotRecords 快照记录，以结构为键，存储一组源记录
+     * @param binlogRecord binlog记录，包含数据库变更信息
+     * @param splitBoundaryType 分片边界类型，用于定义分片键的类型
+     * @param nameAdjuster 名称调整器，用于调整字段名称
+     * @param splitStart 分片开始键，定义分片的起始边界
+     * @param splitEnd 分片结束键，定义分片的结束边界
+     */
     public static void upsertBinlog(
             Map<Struct, List<SourceRecord>> snapshotRecords,
             SourceRecord binlogRecord,
@@ -101,20 +114,28 @@ public class RecordUtils {
             SchemaNameAdjuster nameAdjuster,
             Object[] splitStart,
             Object[] splitEnd) {
+        // 检查是否是数据变更记录
         if (isDataChangeRecord(binlogRecord)) {
+            // 获取binlog记录的值部分，通常包含变更后的数据
             Struct value = (Struct) binlogRecord.value();
             if (value != null) {
+                // 获取包含分块键的结构体
                 Struct chunkKeyStruct = getStructContainsChunkKey(binlogRecord);
+                // 检查分块键是否在当前分片范围内
                 if (splitKeyRangeContains(
                         getSplitKey(splitBoundaryType, nameAdjuster, chunkKeyStruct),
                         splitStart,
                         splitEnd)) {
+                    // 检查是否存在主键
                     boolean hasPrimaryKey = binlogRecord.key() != null;
+                    // 获取操作类型（CREATE, UPDATE, DELETE, READ）
                     Envelope.Operation operation =
                             Envelope.Operation.forCode(
                                     value.getString(Envelope.FieldName.OPERATION));
+                    // 根据操作类型处理记录
                     switch (operation) {
                         case CREATE:
+                            // 插入新记录，如果存在主键，则使用主键，否则使用变更后的值
                             upsertBinlog(
                                     snapshotRecords,
                                     binlogRecord,
@@ -125,14 +146,17 @@ public class RecordUtils {
                                     false);
                             break;
                         case UPDATE:
+                            // 获取变更后的结构体
                             Struct structFromAfter =
                                     createReadOpValue(binlogRecord, Envelope.FieldName.AFTER);
+                            // 如果不存在主键，先尝试插入旧主键，再处理分块键变化的情况
                             if (!hasPrimaryKey) {
                                 upsertBinlog(
                                         snapshotRecords,
                                         binlogRecord,
                                         createReadOpValue(binlogRecord, Envelope.FieldName.BEFORE),
                                         true);
+                                // 如果更新后的分块键超出分片范围，记录警告
                                 if (!splitKeyRangeContains(
                                         getSplitKey(
                                                 splitBoundaryType, nameAdjuster, structFromAfter),
@@ -142,8 +166,7 @@ public class RecordUtils {
                                             "The updated chunk key is out of the split range. Cannot provide exactly-once semantics.");
                                 }
                             }
-                            // If the chunk key changed, we still send here
-                            // This will cause the at-least-once semantics
+                            // 无论如何，更新现有记录，这里可能引入至少一次语义
                             upsertBinlog(
                                     snapshotRecords,
                                     binlogRecord,
@@ -151,6 +174,7 @@ public class RecordUtils {
                                     false);
                             break;
                         case DELETE:
+                            // 删除记录，如果存在主键，则使用主键，否则使用变更前的值
                             upsertBinlog(
                                     snapshotRecords,
                                     binlogRecord,
@@ -161,6 +185,7 @@ public class RecordUtils {
                                     true);
                             break;
                         case READ:
+                            // 抛出异常，不应该有READ操作类型的binlog记录
                             throw new IllegalStateException(
                                     String.format(
                                             "Binlog record shouldn't use READ operation, the the record is %s.",
@@ -171,23 +196,39 @@ public class RecordUtils {
         }
     }
 
+
+    /**
+     * 根据给定的条件将binlog记录插入或更新到快照记录中
+     *
+     * @param snapshotRecords 快照记录的集合，映射为每个结构化的键提供一个源记录列表
+     * @param binlogRecord    待插入或更新的binlog记录
+     * @param keyStruct       用于查找快照记录的键结构
+     * @param isDelete        表示binlog记录是否为删除操作
+     */
     private static void upsertBinlog(
             Map<Struct, List<SourceRecord>> snapshotRecords,
             SourceRecord binlogRecord,
             Struct keyStruct,
             boolean isDelete) {
+        // 检查binlog记录是否包含主键
         boolean hasPrimaryKey = binlogRecord.key() != null;
+        // 获取与给定键结构关联的源记录列表
         List<SourceRecord> records = snapshotRecords.get(keyStruct);
+        // 如果binlog记录表示一个删除操作
         if (isDelete) {
+            // 如果记录不存在或者列表为空，记录错误日志
             if (records == null || records.isEmpty()) {
                 LOG.error(
                         "Deleting a record which is not in its split for tables without primary keys. This may happen when the chunk key column is updated in another snapshot split.");
             } else if (hasPrimaryKey) {
+                // 如果有主键，从快照记录中移除对应的键结构
                 snapshotRecords.remove(keyStruct);
             } else {
+                // 如果没有主键，移除列表中的第一个记录
                 snapshotRecords.get(keyStruct).remove(0);
             }
         } else {
+            // 创建一个新的源记录，代表插入或更新操作
             SourceRecord record =
                     new SourceRecord(
                             binlogRecord.sourcePartition(),
@@ -198,17 +239,21 @@ public class RecordUtils {
                             binlogRecord.key(),
                             binlogRecord.valueSchema(),
                             createReadOpValue(binlogRecord, Envelope.FieldName.AFTER));
+            // 如果有主键，将新记录放入快照记录中
             if (hasPrimaryKey) {
                 snapshotRecords.put(keyStruct, Collections.singletonList(record));
             } else {
+                // 如果没有主键且记录不存在，初始化一个新的列表并放入快照记录中
                 if (records == null) {
                     snapshotRecords.put(keyStruct, new LinkedList<>());
                     records = snapshotRecords.get(keyStruct);
                 }
+                // 将新记录添加到列表中
                 records.add(record);
             }
         }
     }
+
 
     private static Struct createReadOpValue(SourceRecord binlogRecord, String beforeOrAfter) {
         Struct value = (Struct) binlogRecord.value();

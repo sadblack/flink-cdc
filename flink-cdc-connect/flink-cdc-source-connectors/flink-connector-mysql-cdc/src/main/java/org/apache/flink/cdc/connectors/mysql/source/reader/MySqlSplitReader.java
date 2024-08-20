@@ -86,7 +86,7 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
     }
 
     @Override
-    public RecordsWithSplitIds<SourceRecords> fetch() throws IOException {//SourceRecords 就是 stream 里的数据
+    public RecordsWithSplitIds<SourceRecords> fetch() throws IOException {//SourceRecords 就是 stream 里的数据，fetchTask 会调用这个方法，往 elementQueue 里放数据
         try {
             suspendBinlogReaderIfNeed();
             return pollSplitRecords();
@@ -119,18 +119,22 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
                 MySqlSplit nextSplit = binlogSplits.poll();
                 currentSplitId = nextSplit.splitId();
                 currentReader = getBinlogSplitReader();
+                //让当前的reader去处理这个split，reader会创建task，并运行这个task，这是一个异步操作吗
+                //这是一个异步操作，所以下面的 直接 poll，可能不会返回数据
                 currentReader.submitSplit(nextSplit);
             } else if (snapshotSplits.size() > 0) {
                 MySqlSplit nextSplit = snapshotSplits.poll();
                 currentSplitId = nextSplit.splitId();
                 currentReader = getSnapshotSplitReader();
+                //让当前的reader去处理这个split，reader会创建task，并运行这个task，
+                //这是一个异步操作，所以下面的 直接 poll，可能不会返回数据
                 currentReader.submitSplit(nextSplit);
             } else {
                 LOG.info("No available split to read.");
             }
             dataIt = currentReader.pollSplitRecords();
             return dataIt == null ? finishedSplit() : forRecords(dataIt);
-        } else if (currentReader instanceof SnapshotSplitReader) {
+        } else if (currentReader instanceof SnapshotSplitReader) {//代表正在运行的是 SnapshotSplitReader
             // (2) try to switch to binlog split reading util current snapshot split finished
             dataIt = currentReader.pollSplitRecords();
             if (dataIt != null) {
@@ -151,10 +155,10 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
                     }
                 }
                 return records;
-            } else {
+            } else {//因为是异步操作，为什么是 null 的时候就代表这个已经完成了？ 可能是那边会发通知，然后这边再 poll，poll不到代表结束了
                 return finishedSplit();
             }
-        } else if (currentReader instanceof BinlogSplitReader) {
+        } else if (currentReader instanceof BinlogSplitReader) {//什么时候创建 binlogSplitReader
             // (3) switch to snapshot split reading if there are newly added snapshot splits
             dataIt = currentReader.pollSplitRecords();
             if (dataIt != null) {
@@ -185,13 +189,24 @@ public class MySqlSplitReader implements SplitReader<SourceRecords, MySqlSplit> 
         return finishedRecords;
     }
 
+    /**
+     * 把 Iterator<SourceRecords> dataIt 封装进 MySqlRecords 里
+     *
+     * @param dataIt 数据迭代器，包含待处理的源记录
+     * @return 返回生成的MySqlRecords对象
+     */
     private MySqlRecords forRecords(Iterator<SourceRecords> dataIt) {
+        // 判断当前读取器是否为快照读取器
         if (currentReader instanceof SnapshotSplitReader) {
+            // 如果是快照读取器，创建并返回快照记录类型的MySqlRecords
+            // 同时，关闭快照读取器，表示快照数据已经处理完毕
             final MySqlRecords finishedRecords =
                     MySqlRecords.forSnapshotRecords(currentSplitId, dataIt);
             closeSnapshotReader();
             return finishedRecords;
         } else {
+            // 如果不是快照读取器，创建并返回增量记录类型的MySqlRecords
+            // 增量记录通常用于处理数据库的增量更新
             return MySqlRecords.forBinlogRecords(currentSplitId, dataIt);
         }
     }

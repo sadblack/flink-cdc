@@ -232,7 +232,7 @@ public class MySqlHybridSplitAssigner implements MySqlSplitAssigner {
         // of high watermark.
         BinlogOffset stoppingOffset = BinlogOffset.ofNonStopping();
         if (sourceConfig.getStartupOptions().isSnapshotOnly()) {
-            stoppingOffset = maxBinlogOffset;
+            stoppingOffset = maxBinlogOffset;//如果姿势 snapshot 模式，则使用最大位点作为结束位点
         }
 
         // the finishedSnapshotSplitInfos is too large for transmission, divide it to groups and

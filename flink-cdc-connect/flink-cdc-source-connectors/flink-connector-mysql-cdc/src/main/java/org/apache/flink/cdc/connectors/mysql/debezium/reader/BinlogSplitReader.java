@@ -116,6 +116,7 @@ public class BinlogSplitReader implements DebeziumReader<SourceRecords, MySqlSpl
     }
 
     public void submitSplit(MySqlSplit mySqlSplit) {
+        LOG.info(String.format("开始执行binlogsplit: %s", mySqlSplit));
         this.currentBinlogSplit = mySqlSplit.asBinlogSplit();
         configureFilter();
         statefulTaskContext.configure(currentBinlogSplit);
@@ -217,63 +218,77 @@ public class BinlogSplitReader implements DebeziumReader<SourceRecords, MySqlSpl
     }
 
     /**
-     * Returns the record should emit or not.
+     * 判断记录是否应该被发送。
      *
-     * <p>The watermark signal algorithm is the binlog split reader only sends the binlog event that
-     * belongs to its finished snapshot splits. For each snapshot split, the binlog event is valid
-     * since the offset is after its high watermark.
+     * <p>水印信号算法专为 binlog 分割读取器设计，仅发送属于已完成快照分割的 binlog 事件。对于每个快照分割，
+     * 只有当 binlog 事件的偏移量在其高水位之后时才认为有效。
      *
-     * <pre> E.g: the data input is :
-     *    snapshot-split-0 info : [0,    1024) highWatermark0
-     *    snapshot-split-1 info : [1024, 2048) highWatermark1
-     *  the data output is:
-     *  only the binlog event belong to [0,    1024) and offset is after highWatermark0 should send,
-     *  only the binlog event belong to [1024, 2048) and offset is after highWatermark1 should send.
+     * <pre> 示例: 输入数据为 :
+     *    快照分割-0 信息 : [0,    1024) 高水位0
+     *    快照分割-1 信息 : [1024, 2048) 高水位1
+     *  输出数据为:
+     *  只有属于 [0,    1024) 且偏移量在高水位0之后的 binlog 事件应发送，
+     *  只有属于 [1024, 2048) 且偏移量在高水位1之后的 binlog 事件应发送。
      * </pre>
+     *
+     * @param sourceRecord 待判断的源记录
+     * @return 如果记录应该被发送则返回 true，否则返回 false
      */
-    private boolean shouldEmit(SourceRecord sourceRecord) {
-        if (RecordUtils.isDataChangeRecord(sourceRecord)) {
-            TableId tableId = RecordUtils.getTableId(sourceRecord);
-            if (pureBinlogPhaseTables.contains(tableId)) {
-                return true;
-            }
-            BinlogOffset position = RecordUtils.getBinlogPosition(sourceRecord);
-            if (hasEnterPureBinlogPhase(tableId, position)) {
-                return true;
-            }
+private boolean shouldEmit(SourceRecord sourceRecord) {
+    // 检查是否为数据变更记录（例如：INSERT, UPDATE, DELETE）
+    if (RecordUtils.isDataChangeRecord(sourceRecord)) {
+        TableId tableId = RecordUtils.getTableId(sourceRecord);
+        // 如果此表处于纯 binlog 阶段，直接发送
+        if (pureBinlogPhaseTables.contains(tableId)) {
+            return true;
+        }
+        BinlogOffset position = RecordUtils.getBinlogPosition(sourceRecord);
+        // 检查是否已进入纯 binlog 阶段
+        if (hasEnterPureBinlogPhase(tableId, position)) {
+            return true;
+        }
 
-            // only the table who captured snapshot splits need to filter
-            if (finishedSplitsInfo.containsKey(tableId)) {
-                RowType splitKeyType =
-                        ChunkUtils.getChunkKeyColumnType(
-                                statefulTaskContext.getDatabaseSchema().tableFor(tableId),
-                                statefulTaskContext.getSourceConfig().getChunkKeyColumns());
+        // 只有捕获了快照分割的表需要过滤
+        if (finishedSplitsInfo.containsKey(tableId)) {
+            // 获取表的分割键列类型
+            RowType splitKeyType =
+                    ChunkUtils.getChunkKeyColumnType(
+                            statefulTaskContext.getDatabaseSchema().tableFor(tableId),
+                            statefulTaskContext.getSourceConfig().getChunkKeyColumns());
 
-                Struct target = RecordUtils.getStructContainsChunkKey(sourceRecord);
-                Object[] chunkKey =
-                        RecordUtils.getSplitKey(
-                                splitKeyType, statefulTaskContext.getSchemaNameAdjuster(), target);
-                for (FinishedSnapshotSplitInfo splitInfo : finishedSplitsInfo.get(tableId)) {
-                    if (RecordUtils.splitKeyRangeContains(
-                                    chunkKey, splitInfo.getSplitStart(), splitInfo.getSplitEnd())
-                            && position.isAfter(splitInfo.getHighWatermark())) {
-                        return true;
-                    }
+            // 从记录中提取包含分割键的结构
+            Struct target = RecordUtils.getStructContainsChunkKey(sourceRecord);
+            // 计算分割键
+            Object[] chunkKey =
+                    RecordUtils.getSplitKey(
+                            splitKeyType, statefulTaskContext.getSchemaNameAdjuster(), target);
+            // 遍历所有完成的快照分割信息
+            for (FinishedSnapshotSplitInfo splitInfo : finishedSplitsInfo.get(tableId)) {
+                // 检查分割键是否在分割范围内并且在高水位之后
+                if (RecordUtils.splitKeyRangeContains(
+                                chunkKey, splitInfo.getSplitStart(), splitInfo.getSplitEnd())
+                        && position.isAfter(splitInfo.getHighWatermark())) {
+                    return true;
                 }
             }
-            // not in the monitored splits scope, do not emit
-            return false;
-        } else if (RecordUtils.isSchemaChangeEvent(sourceRecord)) {
-            if (RecordUtils.isTableChangeRecord(sourceRecord)) {
-                TableId tableId = RecordUtils.getTableId(sourceRecord);
-                return capturedTableFilter.isIncluded(tableId);
-            } else {
-                // Not related to changes in table structure, like `CREATE/DROP DATABASE`, skip it
-                return false;
-            }
         }
-        return true;
+        // 如果不在监控的分割范围内，则不应发送
+        return false;
+    } else if (RecordUtils.isSchemaChangeEvent(sourceRecord)) {
+        // 如果为表结构变更记录
+        if (RecordUtils.isTableChangeRecord(sourceRecord)) {
+            TableId tableId = RecordUtils.getTableId(sourceRecord);
+            // 只有当表在捕获范围内时才发送
+            return capturedTableFilter.isIncluded(tableId);
+        } else {
+            // 与表结构无关的变更，如 `CREATE/DROP DATABASE`，忽略
+            return false;
+        }
     }
+    // 默认发送
+    return true;
+}
+
 
     private boolean hasEnterPureBinlogPhase(TableId tableId, BinlogOffset position) {
         // the existed tables those have finished snapshot reading

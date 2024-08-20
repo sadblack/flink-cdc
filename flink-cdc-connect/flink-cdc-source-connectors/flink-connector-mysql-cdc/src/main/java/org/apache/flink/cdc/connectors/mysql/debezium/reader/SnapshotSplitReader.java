@@ -142,6 +142,7 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
 
     @Override
     public void submitSplit(MySqlSplit mySqlSplit) {
+        LOG.info(String.format("开始执行snapshotsplit: %s", mySqlSplit));
         this.currentSnapshotSplit = mySqlSplit.asSnapshotSplit();
         statefulTaskContext.configure(currentSnapshotSplit);
         this.queue = statefulTaskContext.getQueue();
@@ -192,37 +193,56 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
                 statefulTaskContext.getOffsetContext());
     }
 
+    /**
+     * 执行回填操作
+     * 在快照扫描完成后，根据快照结果和当前的offset情况，决定是否需要进行回填
+     * 如果需要回填，则创建回填的binlog读取任务并执行
+     * 如果不需要回填，则直接触发BINLOG_END事件并停止当前任务
+     *
+     * @param snapshotResult 快照扫描的结果，包含快照过程中获取的offset信息
+     * @param sourceContext  快照数据源上下文，用于创建回填的binlog split
+     * @throws Exception 如果执行过程中出现错误，抛出异常
+     */
     private void backfill(
             SnapshotResult<MySqlOffsetContext> snapshotResult,
             SnapshotSplitChangeEventSourceContextImpl sourceContext)
             throws Exception {
+        // 创建回填的binlog split
         final MySqlBinlogSplit backfillBinlogSplit = createBackfillBinlogSplit(sourceContext);
-
-        // Dispatch BINLOG_END event directly is backfill is not required
+        BinlogOffset lowWatermark = sourceContext.getLowWatermark();
+        BinlogOffset highWatermark = sourceContext.getHighWatermark();
+        LOG.info(String.format("snapshot split 执行完毕\n low watermark: %s\n high watermark: %s\n", lowWatermark, highWatermark));
+        // 如果不需要回填，直接触发BINLOG_END事件并停止当前任务
         if (!isBackfillRequired(backfillBinlogSplit)) {
             dispatchBinlogEndEvent(backfillBinlogSplit);
             stopCurrentTask();
             return;
         }
 
-        // execute binlog read task
+        // 如果快照扫描已经完成或被跳过，则创建并执行回填的binlog读取任务
         if (snapshotResult.isCompletedOrSkipped()) {
+            // 创建回填的binlog读取任务
             final MySqlBinlogSplitReadTask backfillBinlogReadTask =
                     createBackfillBinlogReadTask(backfillBinlogSplit);
+            // 创建offset加载器，用于从状态中加载offset
             final MySqlOffsetContext.Loader loader =
                     new MySqlOffsetContext.Loader(statefulTaskContext.getConnectorConfig());
+            // 加载回填开始时的offset
             final MySqlOffsetContext mySqlOffsetContext =
                     loader.load(backfillBinlogSplit.getStartingOffset().getOffset());
 
+            // 执行回填的binlog读取任务
             backfillBinlogReadTask.execute(
                     changeEventSourceContext,
                     statefulTaskContext.getMySqlPartition(),
                     mySqlOffsetContext);
         } else {
+            // 如果快照扫描未完成，则抛出异常
             throw new IllegalStateException(
                     String.format("Read snapshot for mysql split %s fail", currentSnapshotSplit));
         }
     }
+
 
     private boolean isBackfillRequired(MySqlBinlogSplit backfillBinlogSplit) {
         return !statefulTaskContext.getSourceConfig().isSkipSnapshotBackfill()
@@ -332,7 +352,7 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
                         if (record.key() != null) {
                             snapshotRecords.put(//一个 splits 里的数据先放到 snapshotRecords 里
                                     (Struct) record.key(), Collections.singletonList(record));
-                        } else {
+                        } else {//什么情况下才会有两条相同的记录
                             List<SourceRecord> records =
                                     snapshotRecords.computeIfAbsent(
                                             (Struct) record.value(), key -> new LinkedList<>());

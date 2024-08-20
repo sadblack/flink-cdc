@@ -83,6 +83,10 @@ public class MySqlBinlogSplitReadTask extends MySqlStreamingChangeEventSource {
             MySqlPartition partition,
             MySqlOffsetContext offsetContext)
             throws InterruptedException {
+        String sourceInfo = offsetContext.getSourceInfo().toString();
+        BinlogOffset startingOffset = binlogSplit.getStartingOffset();
+        BinlogOffset endingOffset = binlogSplit.getEndingOffset();
+        LOG.info(String.format("开始执行 mysql binlog split read task\n sourceInfo: %s\n startingOffset: %s\n endingOffset: %s\n", sourceInfo, startingOffset, endingOffset));
         this.context = context;
         super.execute(context, partition, offsetContext);
     }

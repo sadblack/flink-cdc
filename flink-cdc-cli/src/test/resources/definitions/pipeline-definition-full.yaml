@@ -17,40 +17,47 @@
 source:
   type: mysql
   name: source-database
-  host: localhost
+  host: 192.168.20.18
   port: 3306
-  username: admin
-  password: pass
-  tables: adb.*, bdb.user_table_[0-9]+, [app|web]_order_.*
-  chunk-column: app_order_.*:id,web_order:product_id
+  username: root
+  password: 123456
+  tables: seeyii_assets_database.*
+#  chunk-column: app_order_.*:id,web_order:product_id
   capture-new-tables: true
 
+#sink:
+#  type: kafka
+#  name: sink-queue
+#  bootstrap-servers: localhost:9092
+#  auto-create-table: true
 sink:
-  type: kafka
-  name: sink-queue
-  bootstrap-servers: localhost:9092
-  auto-create-table: true
+  type: mysql
+  name: sink-database
+  host: 192.168.20.18
+  port: 3306
+  username: root
+  password: 123456
 
-route:
-  - source-table: mydb.default.app_order_.*
-    sink-table: odsdb.default.app_order
-    description: sync all sharding tables to one
-  - source-table: mydb.default.web_order
-    sink-table: odsdb.default.ods_web_order
-    description: sync table to with given prefix ods_
+#route:
+#  - source-table: mydb.default.app_order_.*
+#    sink-table: odsdb.default.app_order
+#    description: sync all sharding tables to one
+#  - source-table: mydb.default.web_order
+#    sink-table: odsdb.default.ods_web_order
+#    description: sync table to with given prefix ods_
 
-transform:
-  - source-table: mydb.app_order_.*
-    projection: id, order_id, TO_UPPER(product_name)
-    filter: id > 10 AND order_id > 100
-    primary-keys: id
-    partition-keys: product_name
-    table-options: comment=app order
-    description: project fields from source table
-  - source-table: mydb.web_order_.*
-    projection: CONCAT(id, order_id) as uniq_id, *
-    filter: uniq_id > 10
-    description: add new uniq_id for each row
+#transform:
+#  - source-table: mydb.app_order_.*
+#    projection: id, order_id, TO_UPPER(product_name)
+#    filter: id > 10 AND order_id > 100
+#    primary-keys: id
+#    partition-keys: product_name
+#    table-options: comment=app order
+#    description: project fields from source table
+#  - source-table: mydb.web_order_.*
+#    projection: CONCAT(id, order_id) as uniq_id, *
+#    filter: uniq_id > 10
+#    description: add new uniq_id for each row
 
 pipeline:
   name: source-database-sync-pipe

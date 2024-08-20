@@ -57,7 +57,7 @@ public class CliFrontend {
 
     private static final String user = "root";
     private static final String password = "123456";
-    private static final Integer LIMIT_COUNT = 10;
+    private static final Integer LIMIT_COUNT = 25;
     private static Connection conn1;
     private static Connection conn_source;
     private static ScheduledExecutorService pool = Executors.newSingleThreadScheduledExecutor();
@@ -102,12 +102,42 @@ public class CliFrontend {
         4.3 SplitReader 按 binlog 的类型，放到 snapshotSplits 和 binlogSplits 里
         4.4 然后 SplitFetcher 会执行 FetchTask，最终调用的是 SnapshotSplitReader::submitSplit(MySqlSplit mySqlSplit);
 
-    //流是怎么产生的
+        4.5 FetchTask 会往 elementsQueue 里放元素，OutputOperator 会调 SourceReaderBase::pollNext，取出元素后，由 recordEmitter.emitRecord(record, currentSplitOutput, currentSplitContext.state);
+        4.6 recordEmitter::emitRecord 会执行 debeziumDeserializationSchema.deserialize(element, outputCollector); 转成 event，然后再发送
+
+    5.1 提交 snapshotsplit 时，snapshotsplitreader 会创建 splitSnapshotReadTask 并扔到线程池里执行
+    5.2 splitSnapshotReadTask 从数据源读取数据后，封装成 SourceRecord，再封装成 DataChangeEvent， 放到queue 里
+    5.3 MySqlSplitReader 的 pollSplitRecords 会从 queue 里取出数据，封装成 SourceRecords，然后返回
+
+    1. 先读取 snapshot，读取前获取当前binlog的位置，记为 low，读取完数据后，放入list里，获取现在binlog的位置，记为 high
+    2. 如果 low == high, 证明当前数据库没有产生binlog，这些数据直接就能用
+    3. 如果 low < high, 表示在此期间数据库有binlog产生，需要获取此期间的binlog，如果这些binlog数据里有涉及到 list 里的，以binlog里的数据为准
+
+    带来一个问题，什么时候消费binlog?
+    多并行度的情况下，怎么并行消费 binlog?
 
 
         MySqlSourceReader::addSplits(unfinishedSplits);
             MySqlSplitReader::handleSplitsChanges(new SplitsAddition<>(splitsToAdd));
             snapshotSplits.add(mySqlSplit.asSnapshotSplit());
+
+
+    SnapshotSplitReader 和 BinlogSplitReader 共同合作，才能保证数据不缺不漏
+        1. SnapshotSplitReader 接收 snapshotSplit[比如:只处理id在(1,1000) 之内的数据]，记录 low offset，读取数据后，记录 high offset
+            1.1 如果 low != high，则新建 binlogSplitTask，从数据库读取出 [low,high] 之间的 binlog，组成 low|snapshot|high|binlog|end 的数据格局
+            1.2 然后把 binlog 和 snapshot 合并，此动作意味着， 在binlog里，id位于(1,1000) 之内的数据， high offset 以前的，已经处理完了
+            1.3 最后把 snapshotSplit 和 high offset 保存到本地，同时也上传到 enumerator 上
+
+        2. 所有 snapshotSplits 全都处理完成后，enumerator 有了所有的 split 的处理结果即 high offset，
+            2.1 选出 最小的 offset，此 offset 表示以前的所有 id，都不需要处理了
+            2.2 接下来要创建一个一直运行的 binlogSplit，start offset 为此 offset，没有 end offset，把此 binlogSplit 发送给所有 subtask
+
+        3. BinlogSplitReader 接收 binlogSplit，从 start offset 按顺序读取数据，放到 queue 里
+            3.1 当要发送到输出流的时候，即调 pollSplitRecords 的时候，会从 queue 里获取数据，判断该数据 record 是否需要发送，不需要发送就丢弃
+            3.2 因为每个 snapshotSplit 处理范围不一样，high offset 也可能不一样， 这个 high offset 代表小于此 offset 的 特定id 范围的数据，不需要处理
+            3.3 binlogSplitReader 会获取 当前 slot(subtask) 上处理过的 snapshotSplits，根据 record 找到 snapshotSplit，然后判断 record 的 offset 是否大于 snapshotSplit 的 high offset
+            3.4 如果没找到 snapshotSplit，说明这条数据不需要这个 subtask 处理，如果不大于 high offset，说明不需要处理
+
      */
 
     public static void main(String[] args) throws Exception {
@@ -115,7 +145,7 @@ public class CliFrontend {
         pool.scheduleWithFixedDelay(() -> {
             sinkData(fetchData());
             delData();
-        }, 0, 1000, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, 0, 1, java.util.concurrent.TimeUnit.MILLISECONDS);
 
         Options cliOptions = CliFrontendOptions.initializeOptions();
         CommandLineParser parser = new DefaultParser();
