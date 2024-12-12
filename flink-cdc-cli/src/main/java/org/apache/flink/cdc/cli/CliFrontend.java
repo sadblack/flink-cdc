@@ -40,6 +40,7 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.cdc.cli.CliFrontendOptions.SAVEPOINT_ALLOW_NON_RESTORED_OPTION;
@@ -145,8 +146,7 @@ public class CliFrontend {
         pool.scheduleWithFixedDelay(() -> {
             sinkData(fetchData());
             delData();
-        }, 0, 1, java.util.concurrent.TimeUnit.MILLISECONDS);
-
+        }, 0, 1000, TimeUnit.MILLISECONDS);
         Options cliOptions = CliFrontendOptions.initializeOptions();
         CommandLineParser parser = new DefaultParser();
         CommandLine commandLine = parser.parse(cliOptions, args);

@@ -57,6 +57,7 @@ public class SchemaOperatorTranslator {
             MetadataApplier metadataApplier,
             List<RouteDef> routes) {
         switch (schemaChangeBehavior) {
+            // 执行
             case EVOLVE:
                 return addSchemaOperator(input, parallelism, metadataApplier, routes);
             case IGNORE:
@@ -91,6 +92,18 @@ public class SchemaOperatorTranslator {
                 input.transform(
                         "SchemaOperator",
                         new EventTypeInfo(),
+                        /*
+                        添加了 SchemaOperator 操作符
+                        并且这个操作符对应的 OperatorCoordinator 是 SchemaRegistry
+                        SchemaRegistry 拥有
+                            [
+                            operatorName
+                            context
+                            metadataApplier     //可以用来进行 dml 操作
+                            routingRules
+                            ]
+
+                         */
                         new SchemaOperatorFactory(metadataApplier, routingRules, rpcTimeOut));
         stream.uid(schemaOperatorUid).setParallelism(parallelism);
         return stream;

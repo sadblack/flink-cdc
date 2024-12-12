@@ -36,7 +36,7 @@ import java.util.Optional;
 public class RouteDef {
     private final String sourceTable;
     private final String sinkTable;
-    private final String replaceSymbol;
+    private final String replaceSymbol;//替换符号，可能是用来模糊匹配表名的
     @Nullable private final String description;
 
     public RouteDef(

@@ -37,6 +37,7 @@ import org.apache.flink.cdc.composer.flink.translator.TransformTranslator;
 import org.apache.flink.cdc.composer.utils.FactoryDiscoveryUtils;
 import org.apache.flink.cdc.runtime.serializer.event.EventSerializer;
 import org.apache.flink.configuration.DeploymentOptions;
+import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
@@ -81,8 +82,19 @@ public class FlinkPipelineComposer implements PipelineComposer {
     }
 
     public static FlinkPipelineComposer ofMiniCluster() {
+
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        // 启用检查点
+        env.enableCheckpointing(5000); // 每 5000 ms 触发一次检查点
+        env.getCheckpointConfig().setCheckpointTimeout(60000); // 检查点超时时间为 60 秒
+
+
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(2000); // 最小暂停时间间隔为 2000 ms
+        env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE); // 设置检查点模式为 EXACTLY_ONCE
+
         return new FlinkPipelineComposer(
-                StreamExecutionEnvironment.getExecutionEnvironment(), true);
+                env, true);
     }
 
     private FlinkPipelineComposer(StreamExecutionEnvironment env, boolean isBlocking) {
@@ -102,16 +114,28 @@ public class FlinkPipelineComposer implements PipelineComposer {
         int parallelism = pipelineDef.getConfig().get(PipelineOptions.PIPELINE_PARALLELISM);
         env.getConfig().setParallelism(parallelism);
 
-        // 构建源操作符
         DataSourceTranslator sourceTranslator = new DataSourceTranslator();
+        //生成 stream，流内是 Event (通过 source.type 和 SPI 机制，寻找 DataSourceFactory 的实现类)
         DataStream<Event> stream =
                 sourceTranslator.translate(pipelineDef.getSource(), env, pipelineDef.getConfig());
 
-        // 构建TransformSchemaOperator用于处理Schema事件
+        /**
+        添加 {@link org.apache.flink.cdc.runtime.operators.transform.TransformSchemaOperator}， 用来记录 tableChangeInfo，保存在 state 里
+        一共有三种 event
+        CreateTableEvent
+        SchemaChangeEvent
+        DataChangeEvent
+
+        对于前两种 dml 操作，缓存 tableChangeInfoMap，然后再下发
+        对于第三种 ddl 操作，应用 projection rules 后，再下发
+         */
         TransformTranslator transformTranslator = new TransformTranslator();
         stream = transformTranslator.translateSchema(stream, pipelineDef.getTransforms());
 
-        // 构建Schema操作符
+        /*
+        构建 schema.change.behavior 操作符，处理 schema 变更事件
+
+         */
         SchemaOperatorTranslator schemaOperatorTranslator =
                 new SchemaOperatorTranslator(
                         pipelineDef
@@ -124,7 +148,10 @@ public class FlinkPipelineComposer implements PipelineComposer {
         OperatorIDGenerator schemaOperatorIDGenerator =
                 new OperatorIDGenerator(schemaOperatorTranslator.getSchemaOperatorUid());
 
-        // 构建TransformDataOperator用于处理数据事件
+        /**
+         * {@link org.apache.flink.cdc.runtime.operators.transform.TransformDataOperator}
+         * 添加了 TransformDataOperator 操作符
+         */
         stream =
                 transformTranslator.translateData(
                         stream,
@@ -132,15 +159,35 @@ public class FlinkPipelineComposer implements PipelineComposer {
                         schemaOperatorIDGenerator.generate(),
                         pipelineDef.getConfig().get(PipelineOptions.PIPELINE_LOCAL_TIME_ZONE));
 
-        // 提前构建DataSink，因为Schema操作符需要MetadataApplier
+        /*
+        提前构建 DataSink(通过 source.type 和 SPI 机制，寻找 DataSinkFactory 的实现类)，因为 Schema操作符需要 MetadataApplier
+         */
         DataSink dataSink = createDataSink(pipelineDef.getSink(), pipelineDef.getConfig());
 
-        // 应用Schema操作
+        /**
+            添加了 {@link org.apache.flink.cdc.runtime.operators.schema.SchemaOperator} 操作符
+            并且这个操作符对应的 OperatorCoordinator 是 SchemaRegistry
+            SchemaRegistry 拥有
+            [
+                operatorName
+                context
+                metadataApplier     //可以用来进行 dml 操作
+                routingRules
+            ]
+         */
         stream =
                 schemaOperatorTranslator.translate(
                         stream, parallelism, dataSink.getMetadataApplier(), pipelineDef.getRoute());
 
-        // 构建Partitioner用于事件的洗牌
+        /**
+         * 构建Partitioner用于事件的洗牌
+         * 添加了 {@link org.apache.flink.cdc.runtime.partitioning.PrePartitionOperator}
+         * 设置了 parallelism
+         * 设置 partitionCustom
+         * 又用了一个 map, PostPartitionProcessor
+         *
+         * 以上各步骤，共同视为一个算子
+         */
         PartitioningTranslator partitioningTranslator = new PartitioningTranslator();
         stream =
                 partitioningTranslator.translate(
@@ -150,7 +197,7 @@ public class FlinkPipelineComposer implements PipelineComposer {
                         schemaOperatorIDGenerator.generate(),
                         dataSink.getDataChangeEventHashFunctionProvider());
 
-        // 构建Sink操作符
+        // 添加 sink
         DataSinkTranslator sinkTranslator = new DataSinkTranslator();
         sinkTranslator.translate(
                 pipelineDef.getSink(), stream, dataSink, schemaOperatorIDGenerator.generate());
