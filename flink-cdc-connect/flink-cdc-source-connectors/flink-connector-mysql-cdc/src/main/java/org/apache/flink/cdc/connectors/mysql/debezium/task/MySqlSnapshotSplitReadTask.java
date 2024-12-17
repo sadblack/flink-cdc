@@ -254,6 +254,14 @@ public class MySqlSnapshotSplitReadTask
                 table.id(),
                 selectSql);
 
+        /*
+        每次必须读完整个 split，分多次读取会增加复杂度
+        比如分成了两次读取，一次读 一半split
+        第二次处理完成后，仍然只能按照第一次时的 binlog 位点，发送
+
+        如果是 splitEnd == null，读取时，不设置 limit 的上限，表示在当前 binlog 位点下，读完所有符合条件的数据
+         */
+
         try (PreparedStatement selectStatement =
                         StatementUtils.readTableSplitDataStatement(
                                 jdbcConnection,

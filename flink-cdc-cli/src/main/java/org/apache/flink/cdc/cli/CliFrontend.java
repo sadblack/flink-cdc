@@ -24,6 +24,7 @@ import org.apache.flink.cdc.cli.utils.FlinkEnvironmentUtils;
 import org.apache.flink.cdc.common.annotation.VisibleForTesting;
 import org.apache.flink.cdc.common.configuration.Configuration;
 import org.apache.flink.cdc.composer.PipelineExecution;
+import org.apache.flink.cdc.connectors.mysql.source.split.MySqlSnapshotSplit;
 import org.apache.flink.runtime.jobgraph.RestoreMode;
 import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
@@ -53,12 +54,12 @@ public class CliFrontend {
     private static final String FLINK_HOME_ENV_VAR = "FLINK_HOME";
     private static final String FLINK_CDC_HOME_ENV_VAR = "FLINK_CDC_HOME";
 
-    private static final String url = "jdbc:mysql://localhost:3306/app_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
-    private static final String url_source = "jdbc:mysql://localhost:3306/source_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private static final String url = "jdbc:mysql://100.87.67.120:3306/source?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private static final String url_source = "jdbc:mysql://100.87.67.120:3306/source?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
 
     private static final String user = "root";
     private static final String password = "123456";
-    private static final Integer LIMIT_COUNT = 25;
+    private static final Integer LIMIT_COUNT = 200;
     private static Connection conn1;
     private static Connection conn_source;
     private static ScheduledExecutorService pool = Executors.newSingleThreadScheduledExecutor();
@@ -75,7 +76,9 @@ public class CliFrontend {
         // 建立连接
         try {
             conn1 = DriverManager.getConnection(url, user, password);
+            conn1.setAutoCommit(false);
             conn_source = DriverManager.getConnection(url_source, user, password);
+            conn_source.setAutoCommit(false);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -147,24 +150,26 @@ public class CliFrontend {
             sinkData(fetchData());
             delData();
         }, 0, 1000, TimeUnit.MILLISECONDS);
-        Options cliOptions = CliFrontendOptions.initializeOptions();
-        CommandLineParser parser = new DefaultParser();
-        CommandLine commandLine = parser.parse(cliOptions, args);
 
-        // Help message
-        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
-            HelpFormatter formatter = new HelpFormatter();
-            formatter.setLeftPadding(4);
-            formatter.setWidth(80);
-            formatter.printHelp(" ", cliOptions);
-            return;
-        }
 
-        // Create executor and execute the pipeline
-        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
-
-        // Print execution result
-        printExecutionInfo(result);
+//        Options cliOptions = CliFrontendOptions.initializeOptions();
+//        CommandLineParser parser = new DefaultParser();
+//        CommandLine commandLine = parser.parse(cliOptions, args);
+//
+//        // Help message
+//        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
+//            HelpFormatter formatter = new HelpFormatter();
+//            formatter.setLeftPadding(4);
+//            formatter.setWidth(80);
+//            formatter.printHelp(" ", cliOptions);
+//            return;
+//        }
+//
+//        // Create executor and execute the pipeline
+//        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
+//
+//        // Print execution result
+//        printExecutionInfo(result);
     }
 
     @VisibleForTesting
@@ -290,7 +295,7 @@ public class CliFrontend {
 
         List<Map<String, Object>> list = new LinkedList<>();
 
-        String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit " + LIMIT_COUNT;
+        String sql = "select code, name, level, pcode, category from area_code_2024_source order by code asc limit " + LIMIT_COUNT;
         try (Statement stmt = conn_source.createStatement();
              ResultSet rs = stmt.executeQuery(sql);
         ) {
@@ -331,6 +336,8 @@ public class CliFrontend {
             // 执行批处理
             int[] affectedRows = pstmt.executeBatch();
 
+            conn1.commit();
+
             System.out.println("成功插入了 " + affectedRows.length + " 行数据。");
 
             // 注意：这里不需要显式关闭pstmt和conn，因为使用了try-with-resources语句
@@ -341,7 +348,7 @@ public class CliFrontend {
 
     private static void delData() {
 
-        String sql = "delete from area_code_2024 order by code asc limit " + LIMIT_COUNT;
+        String sql = "delete from area_code_2024_source order by code asc limit " + LIMIT_COUNT;
         try (
                 // 创建PreparedStatement
                 PreparedStatement pstmt = conn_source.prepareStatement(sql);
@@ -351,6 +358,8 @@ public class CliFrontend {
 
             // 执行批处理
             int affectedRows = pstmt.executeUpdate();
+
+            conn_source.commit();
 
             System.out.println("成功删除了 " + affectedRows + " 行数据。");
 

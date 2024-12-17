@@ -133,6 +133,7 @@ public class MySqlSourceEnumerator implements SplitEnumerator<MySqlSplit, Pendin
             // reader failed between sending the request and now. skip this request.
             return;
         }
+        //这个请求只有 subtaskId，没有其他信息，比如 某个 subtaskId 只想要某种类型的 split
 
         readersAwaitingSplit.add(subtaskId);
         assignSplits();

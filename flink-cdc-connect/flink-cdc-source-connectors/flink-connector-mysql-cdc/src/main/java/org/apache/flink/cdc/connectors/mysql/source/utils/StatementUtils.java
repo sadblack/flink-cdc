@@ -213,6 +213,7 @@ public class StatementUtils {
                 }
             } else {
                 for (int i = 0; i < primaryKeyNum; i++) {
+
                     statement.setObject(i + 1, splitStart[i]);
                     statement.setObject(i + 1 + primaryKeyNum, splitEnd[i]);
                     statement.setObject(i + 1 + 2 * primaryKeyNum, splitEnd[i]);
@@ -237,6 +238,12 @@ public class StatementUtils {
         final Connection connection = jdbc.connection();
         connection.setAutoCommit(false);
         final PreparedStatement statement = connection.prepareStatement(sql);
+        /*
+        fetchSize 是 jdbc 层面的配置
+        如果设置了 fetchSize = 100，表示 jdbc 每次会从数据库获取 100 条
+        如果 sql 里有 limit 0，1000，此时，jdbc 驱动，会分 10 次，从 数据库获取数据
+        10次全部完成后，再返回
+         */
         statement.setFetchSize(fetchSize);
         return statement;
     }
