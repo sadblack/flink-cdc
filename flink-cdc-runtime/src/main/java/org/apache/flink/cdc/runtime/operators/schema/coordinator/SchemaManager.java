@@ -100,8 +100,10 @@ public class SchemaManager {
     /** Apply schema change to a table. */
     public void applySchemaChange(SchemaChangeEvent schemaChangeEvent) {
         if (schemaChangeEvent instanceof CreateTableEvent) {
+            // tableSchemas 添加一条数据
             handleCreateTableEvent(((CreateTableEvent) schemaChangeEvent));
         } else {
+            // 从 tableSchemas 拿到最新数据
             Optional<Schema> optionalSchema = getLatestSchema(schemaChangeEvent.tableId());
             checkArgument(
                     optionalSchema.isPresent(),
@@ -109,6 +111,7 @@ public class SchemaManager {
                     schemaChangeEvent.tableId());
 
             LOG.info("Handling schema change event: {}", schemaChangeEvent);
+            // 更新 tableSchemas
             registerNewSchema(
                     schemaChangeEvent.tableId(),
                     SchemaUtils.applySchemaChangeEvent(optionalSchema.get(), schemaChangeEvent));

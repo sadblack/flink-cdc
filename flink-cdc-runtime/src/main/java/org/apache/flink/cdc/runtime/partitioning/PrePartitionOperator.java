@@ -87,6 +87,7 @@ public class PrePartitionOperator extends AbstractStreamOperator<PartitioningEve
             broadcastEvent(event);
         } else if (event instanceof FlushEvent) {
             // Broadcast FlushEvent
+            // 这里，把 FlushEvent 分发给下游每一个并行度，所以，上面只有一个并行度
             broadcastEvent(event);
         } else if (event instanceof DataChangeEvent) {
             // Partition DataChangeEvent by table ID and primary keys

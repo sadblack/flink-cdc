@@ -18,7 +18,7 @@
         </File>
     </appenders>
     <loggers>
-        <root level="all">
+        <root level="debug">
             <appender-ref ref="Console"/>
             <AppenderRef ref="File"/>
         </root>

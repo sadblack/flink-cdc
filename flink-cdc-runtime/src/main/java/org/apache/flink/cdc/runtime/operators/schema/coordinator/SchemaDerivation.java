@@ -59,6 +59,7 @@ public class SchemaDerivation {
     /**
      * Storing route source table selector, sink table name (before symbol replacement), and replace
      * symbol in a tuple.
+     * 支持正则
      */
     private transient List<Tuple3<Selectors, String, String>> routes;
 
@@ -84,6 +85,11 @@ public class SchemaDerivation {
     }
 
     public List<SchemaChangeEvent> applySchemaChange(SchemaChangeEvent schemaChangeEvent) {
+
+        /*
+        由于存在多个路由，可能把多个库的表，映射到一个里面
+        可能把一个表，映射到多个里面吗
+         */
         List<SchemaChangeEvent> events = new ArrayList<>();
         TableId originalTable = schemaChangeEvent.tableId();
         boolean noRouteMatched = true;

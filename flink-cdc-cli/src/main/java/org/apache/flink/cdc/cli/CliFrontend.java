@@ -59,7 +59,7 @@ public class CliFrontend {
 
     private static final String user = "root";
     private static final String password = "123456";
-    private static final Integer LIMIT_COUNT = 200;
+    private static final Integer LIMIT_COUNT = 20;
     private static Connection conn1;
     private static Connection conn_source;
     private static ScheduledExecutorService pool = Executors.newSingleThreadScheduledExecutor();
@@ -142,34 +142,36 @@ public class CliFrontend {
             3.3 binlogSplitReader 会获取 当前 slot(subtask) 上处理过的 snapshotSplits，根据 record 找到 snapshotSplit，然后判断 record 的 offset 是否大于 snapshotSplit 的 high offset
             3.4 如果没找到 snapshotSplit，说明这条数据不需要这个 subtask 处理，如果不大于 high offset，说明不需要处理
 
+        4. 怎么保证的 ddl event，每个并行度各一份
+        5. 哪个算子发送 Flush Event，然后又是哪个算子发送 FlushSuccessEvent
      */
 
     public static void main(String[] args) throws Exception {
         //开启数据同步
-        pool.scheduleWithFixedDelay(() -> {
-            sinkData(fetchData());
-            delData();
-        }, 0, 1000, TimeUnit.MILLISECONDS);
+//        pool.scheduleWithFixedDelay(() -> {
+//            sinkData(fetchData());
+//            delData();
+//        }, 0, 1000, TimeUnit.MILLISECONDS);
 
 
-//        Options cliOptions = CliFrontendOptions.initializeOptions();
-//        CommandLineParser parser = new DefaultParser();
-//        CommandLine commandLine = parser.parse(cliOptions, args);
-//
-//        // Help message
-//        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
-//            HelpFormatter formatter = new HelpFormatter();
-//            formatter.setLeftPadding(4);
-//            formatter.setWidth(80);
-//            formatter.printHelp(" ", cliOptions);
-//            return;
-//        }
-//
-//        // Create executor and execute the pipeline
-//        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
-//
-//        // Print execution result
-//        printExecutionInfo(result);
+        Options cliOptions = CliFrontendOptions.initializeOptions();
+        CommandLineParser parser = new DefaultParser();
+        CommandLine commandLine = parser.parse(cliOptions, args);
+
+        // Help message
+        if (args.length == 0 || commandLine.hasOption(CliFrontendOptions.HELP)) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.setLeftPadding(4);
+            formatter.setWidth(80);
+            formatter.printHelp(" ", cliOptions);
+            return;
+        }
+
+        // Create executor and execute the pipeline
+        PipelineExecution.ExecutionInfo result = createExecutor(commandLine).run();
+
+        // Print execution result
+        printExecutionInfo(result);
     }
 
     @VisibleForTesting

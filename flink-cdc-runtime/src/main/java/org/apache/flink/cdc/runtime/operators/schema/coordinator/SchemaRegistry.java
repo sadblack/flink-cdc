@@ -132,6 +132,11 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
     public void handleEventFromOperator(int subtask, int attemptNumber, OperatorEvent event)
             throws Exception {
         if (event instanceof FlushSuccessEvent) {
+            /*
+            如果所有 subTask 都 flush 成功了，就应用表结构变更
+            TODO
+                1.什么时候收到
+             */
             FlushSuccessEvent flushSuccessEvent = (FlushSuccessEvent) event;
             LOG.info(
                     "Sink subtask {} succeed flushing for table {}.",
@@ -139,9 +144,17 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
                     flushSuccessEvent.getTableId().toString());
             requestHandler.flushSuccess(
                     flushSuccessEvent.getTableId(), flushSuccessEvent.getSubtask());
-        } else if (event instanceof SinkWriterRegisterEvent) {
+        }
+        else if (event instanceof SinkWriterRegisterEvent) {
+            /*
+            活跃用户注册
+            TODO
+            为什么用这种方式注册
+             */
+
             requestHandler.registerSinkWriter(((SinkWriterRegisterEvent) event).getSubtask());
-        } else {
+        }
+        else {
             throw new FlinkException("Unrecognized Operator Event: " + event);
         }
     }
@@ -172,16 +185,74 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
     public CompletableFuture<CoordinationResponse> handleCoordinationRequest(
             CoordinationRequest request) {
         if (request instanceof SchemaChangeRequest) {
+            /*
+            由 SchemaOperator 发送
+
+            1.如果队列没有，就更新内存里的表结构？，然后放到开头
+            2.如果队头已有数据，就放到队尾
+            TODO  只改了内存的表结构
+
+            SchemaOperator 接收到 SchemaChangeEvent 时，发送 这个请求到 registry
+             */
             SchemaChangeRequest schemaChangeRequest = (SchemaChangeRequest) request;
             return requestHandler.handleSchemaChangeRequest(schemaChangeRequest);
         } else if (request instanceof ReleaseUpstreamRequest) {
+            /*
+            TODO
+            什么时候收到这个请求
+
+            // The request will need to send a FlushEvent or block until flushing finished
+            SchemaChangeResponse response = requestSchemaChange(tableId, schemaChangeEvent);
+            if (!response.getSchemaChangeEvents().isEmpty()) {
+                LOG.info(
+                        "Sending the FlushEvent for table {} in subtask {}.",
+                        tableId,
+                        getRuntimeContext().getIndexOfThisSubtask());
+                output.collect(new StreamRecord<>(new FlushEvent(tableId)));
+                response.getSchemaChangeEvents().forEach(e -> output.collect(new StreamRecord<>(e)));
+                // The request will block until flushing finished in each sink writer
+                requestReleaseUpstream();
+            }
+            由 SchemaOperator 发送
+             */
             return requestHandler.handleReleaseUpstreamRequest();
         } else if (request instanceof GetSchemaRequest) {
+            /*
+            返回最新的 schema
+             */
             return CompletableFuture.completedFuture(
                     wrap(handleGetSchemaRequest(((GetSchemaRequest) request))));
         } else if (request instanceof SchemaChangeResultRequest) {
+            //下游算子获取表结构变更结果
+            /*
+                private void requestReleaseUpstream() throws InterruptedException, TimeoutException {
+                    CoordinationResponse coordinationResponse =
+                            sendRequestToCoordinator(new ReleaseUpstreamRequest());
+                    long nextRpcTimeOutMillis = System.currentTimeMillis() + rpcTimeOutInMillis;
+                    while (coordinationResponse instanceof SchemaChangeProcessingResponse) {
+                        if (System.currentTimeMillis() < nextRpcTimeOutMillis) {
+                            Thread.sleep(1000);
+                            coordinationResponse = sendRequestToCoordinator(new SchemaChangeResultRequest());
+                        } else {
+                            throw new TimeoutException("TimeOut when requesting release upstream");
+                        }
+                    }
+                }
+             */
+
+            /*
+            由 SchemaOperator 发送
+
+             */
             return requestHandler.getSchemaChangeResult();
         } else if (request instanceof RefreshPendingListsRequest) {
+            /*
+            清空 requestHandler 的
+                pendingSchemaChanges
+                flushedSinkWriters
+
+            由 SchemaOperator 发送，在初始化的时候发送
+             */
             return requestHandler.refreshPendingLists();
         } else {
             throw new IllegalArgumentException("Unrecognized CoordinationRequest type: " + request);

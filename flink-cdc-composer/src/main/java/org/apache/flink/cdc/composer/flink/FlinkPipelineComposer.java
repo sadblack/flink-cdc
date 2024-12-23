@@ -21,6 +21,7 @@ import org.apache.flink.cdc.common.annotation.Internal;
 import org.apache.flink.cdc.common.configuration.Configuration;
 import org.apache.flink.cdc.common.event.Event;
 import org.apache.flink.cdc.common.factories.DataSinkFactory;
+import org.apache.flink.cdc.common.factories.DataSourceFactory;
 import org.apache.flink.cdc.common.factories.FactoryHelper;
 import org.apache.flink.cdc.common.pipeline.PipelineOptions;
 import org.apache.flink.cdc.common.sink.DataSink;
@@ -86,7 +87,7 @@ public class FlinkPipelineComposer implements PipelineComposer {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         // 启用检查点
-        env.enableCheckpointing(5000); // 每 5000 ms 触发一次检查点
+        env.enableCheckpointing(2000); // 每 5000 ms 触发一次检查点
         env.getCheckpointConfig().setCheckpointTimeout(60000); // 检查点超时时间为 60 秒
 
 
@@ -115,7 +116,9 @@ public class FlinkPipelineComposer implements PipelineComposer {
         env.getConfig().setParallelism(parallelism);
 
         DataSourceTranslator sourceTranslator = new DataSourceTranslator();
-        //生成 stream，流内是 Event (通过 source.type 和 SPI 机制，寻找 DataSourceFactory 的实现类)
+        /**
+         * 生成 stream，流内是 Event (通过 source.type 和 SPI 机制，寻找 {@link org.apache.flink.cdc.common.factories.DataSourceFactory} 的实现类)
+         */
         DataStream<Event> stream =
                 sourceTranslator.translate(pipelineDef.getSource(), env, pipelineDef.getConfig());
 
@@ -151,6 +154,8 @@ public class FlinkPipelineComposer implements PipelineComposer {
         /**
          * {@link org.apache.flink.cdc.runtime.operators.transform.TransformDataOperator}
          * 添加了 TransformDataOperator 操作符
+         *
+         * 用到了 SchemaRegistry
          */
         stream =
                 transformTranslator.translateData(

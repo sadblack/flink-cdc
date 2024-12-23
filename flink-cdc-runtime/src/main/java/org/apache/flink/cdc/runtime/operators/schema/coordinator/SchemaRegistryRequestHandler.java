@@ -108,7 +108,11 @@ public class SchemaRegistryRequestHandler implements Closeable {
                 metadataApplier.applySchemaChange(changeEvent);
                 LOG.debug("Apply schema change {} to table {}.", changeEvent, tableId);
             }
+            //TODO 第二个等待的请求
             PendingSchemaChange waitFlushSuccess = pendingSchemaChanges.get(0);
+            /*
+            TODO 为什么
+             */
             if (RECEIVED_RELEASE_REQUEST.equals(waitFlushSuccess.getStatus())) {
                 startNextSchemaChangeRequest();
             }
@@ -121,7 +125,7 @@ public class SchemaRegistryRequestHandler implements Closeable {
 
     /**
      * Handle the {@link SchemaChangeRequest} and wait for all sink subtasks flushing.
-     *
+     *  好像只是更新了内存表的结构
      * @param request the received SchemaChangeRequest
      */
     public CompletableFuture<CoordinationResponse> handleSchemaChangeRequest(
@@ -135,9 +139,10 @@ public class SchemaRegistryRequestHandler implements Closeable {
                 return CompletableFuture.completedFuture(
                         wrap(new SchemaChangeResponse(Collections.emptyList())));
             }
+            //更新内存里 源表 的信息(tableSchemas)
             schemaManager.applySchemaChange(request.getSchemaChangeEvent());
-            List<SchemaChangeEvent> derivedSchemaChangeEvents =
-                    schemaDerivation.applySchemaChange(request.getSchemaChangeEvent());
+            //处理派生表
+            List<SchemaChangeEvent> derivedSchemaChangeEvents = schemaDerivation.applySchemaChange(request.getSchemaChangeEvent());
             CompletableFuture<CoordinationResponse> response =
                     CompletableFuture.completedFuture(
                             wrap(new SchemaChangeResponse(derivedSchemaChangeEvents)));
@@ -145,13 +150,16 @@ public class SchemaRegistryRequestHandler implements Closeable {
                 PendingSchemaChange pendingSchemaChange =
                         new PendingSchemaChange(request, response);
                 pendingSchemaChange.derivedSchemaChangeEvents = derivedSchemaChangeEvents;
+                //放入队列里，此时它位于队列开头
                 pendingSchemaChanges.add(pendingSchemaChange);
+                //更新状态为 WAIT_RELEASE_REQUEST
                 pendingSchemaChanges.get(0).startToWaitForReleaseRequest();
             }
             return response;
         } else {
             LOG.info("There are already processing requests. Wait for processing.");
             CompletableFuture<CoordinationResponse> response = new CompletableFuture<>();
+            //放入队列末尾
             pendingSchemaChanges.add(new PendingSchemaChange(request, response));
             return response;
         }
@@ -161,9 +169,16 @@ public class SchemaRegistryRequestHandler implements Closeable {
     public CompletableFuture<CoordinationResponse> handleReleaseUpstreamRequest() {
         CompletableFuture<CoordinationResponse> response =
                 pendingSchemaChanges.get(0).getResponseFuture();
+        /*
+        TODO
+        如果已经处理完了
+         */
         if (response.isDone() && !isSchemaChangeApplying) {
             startNextSchemaChangeRequest();
         } else {
+            /*
+            如果还没处理完，更新状态为 RECEIVED_RELEASE_REQUEST
+             */
             pendingSchemaChanges.get(0).receiveReleaseRequest();
         }
         return response;
@@ -191,6 +206,7 @@ public class SchemaRegistryRequestHandler implements Closeable {
             LOG.info(
                     "All sink subtask have flushed for table {}. Start to apply schema change.",
                     tableId.toString());
+            //怎么向所有的 subtask 发送
             PendingSchemaChange waitFlushSuccess = pendingSchemaChanges.get(0);
             schemaChangeThreadPool.submit(
                     () -> applySchemaChange(tableId, waitFlushSuccess.derivedSchemaChangeEvents));
@@ -198,13 +214,17 @@ public class SchemaRegistryRequestHandler implements Closeable {
             if (schemaChangeException != null) {
                 throw new RuntimeException("failed to apply schema change.", schemaChangeException);
             }
+            //如果还没完成，发送 SchemaChangeProcessingResponse
             if (isSchemaChangeApplying) {
                 waitFlushSuccess
                         .getResponseFuture()
                         .complete(wrap(new SchemaChangeProcessingResponse()));
             } else {
+                //如果完成了，发送 ReleaseUpstreamResponse
                 waitFlushSuccess.getResponseFuture().complete(wrap(new ReleaseUpstreamResponse()));
             }
+        } else {
+            //什么都不发送
         }
     }
 

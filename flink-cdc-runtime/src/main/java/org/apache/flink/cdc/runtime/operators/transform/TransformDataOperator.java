@@ -34,6 +34,7 @@ import org.apache.flink.cdc.common.utils.StringUtils;
 import org.apache.flink.cdc.runtime.operators.sink.SchemaEvolutionClient;
 import org.apache.flink.cdc.runtime.parser.TransformParser;
 import org.apache.flink.runtime.jobgraph.OperatorID;
+import org.apache.flink.runtime.operators.coordination.OperatorCoordinator;
 import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
@@ -185,7 +186,8 @@ public class TransformDataOperator extends AbstractStreamOperator<Event>
         if (event instanceof SchemaChangeEvent) {
             event = cacheSchema((SchemaChangeEvent) event);
             output.collect(new StreamRecord<>(event));
-        } else if (event instanceof DataChangeEvent) {
+        }
+        else if (event instanceof DataChangeEvent) {
             Optional<DataChangeEvent> dataChangeEventOptional =
                     processDataChangeEvent(((DataChangeEvent) event));
             if (dataChangeEventOptional.isPresent()) {

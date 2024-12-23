@@ -105,6 +105,7 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
     /**
      * Storing mapping relations between upstream tableId (source table) mapping to downstream
      * tableIds (sink tables).
+     * 通过解析 route 拿到的
      */
     private transient LoadingCache<TableId, List<TableId>> tableIdMappingCache;
 
@@ -160,7 +161,8 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
                                 new CacheLoader<TableId, List<TableId>>() {
                                     @Override
                                     public List<TableId> load(TableId tableId) {
-                                        return getRoutedTables(tableId);
+                                        List<TableId> routedTables = getRoutedTables(tableId);
+                                        return routedTables;
                                     }
                                 });
     }
@@ -190,8 +192,9 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
                     "Table {} received SchemaChangeEvent and start to be blocked.",
                     tableId.toString());
             handleSchemaChangeEvent(tableId, (SchemaChangeEvent) event);
-            // Update caches
+            // 这里，保存的是 tableId，Schema
             cachedSchemas.put(tableId, getLatestSchema(tableId));
+            // 这里，保存的是 tableId，List<RoutedTableId>
             tableIdMappingCache
                     .get(tableId)
                     .forEach(routed -> cachedSchemas.put(routed, getLatestSchema(routed)));
@@ -200,6 +203,10 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
 
         // Data changes
         DataChangeEvent dataChangeEvent = (DataChangeEvent) event;
+        /**
+         * 这里，获取了 派生后的 tableId
+         * 所以，它不能处理 包含字段名变更的映射吧
+         */
         List<TableId> optionalRoutedTable = tableIdMappingCache.get(dataChangeEvent.tableId());
         if (optionalRoutedTable.isEmpty()) {
             output.collect(streamRecord);
@@ -305,6 +312,21 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
         return TableId.parse(route.f1);
     }
 
+    /**
+     * 1. 发送表结构变更请求，如果返回的 SchemaChangeEvents 不为空，发送 FlushEvent，再把返回的 SchemaChangeEvents 发送出去
+     * 2. 发送 ReleaseUpstreamRequest
+     * 3. 如果返回了 SchemaChangeProcessingResponse，即 schema 变更还没结束，则 在超时之前，每 1s 获取一次结果
+     * 4. 直到 超时/SchemaChangeProcessSuccess
+     *
+     *  所有 subtask 都会返回 schemaChangeEvents 吗，是立即返回的吗
+     *  返回的 schemaChangeEvents 意味着什么
+     *
+     *
+     * @param tableId
+     * @param schemaChangeEvent
+     * @throws InterruptedException
+     * @throws TimeoutException
+     */
     private void handleSchemaChangeEvent(TableId tableId, SchemaChangeEvent schemaChangeEvent)
             throws InterruptedException, TimeoutException {
         // The request will need to send a FlushEvent or block until flushing finished
