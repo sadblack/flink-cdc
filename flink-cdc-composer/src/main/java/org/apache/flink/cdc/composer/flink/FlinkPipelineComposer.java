@@ -101,6 +101,7 @@ public class FlinkPipelineComposer implements PipelineComposer {
     private FlinkPipelineComposer(StreamExecutionEnvironment env, boolean isBlocking) {
         this.env = env;
         this.isBlocking = isBlocking;
+        env.enableCheckpointing(10_000, CheckpointingMode.EXACTLY_ONCE);
     }
 
     @Override

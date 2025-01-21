@@ -24,7 +24,8 @@ import org.apache.flink.cdc.cli.utils.FlinkEnvironmentUtils;
 import org.apache.flink.cdc.common.annotation.VisibleForTesting;
 import org.apache.flink.cdc.common.configuration.Configuration;
 import org.apache.flink.cdc.composer.PipelineExecution;
-import org.apache.flink.cdc.connectors.mysql.source.split.MySqlSnapshotSplit;
+import org.apache.flink.cdc.connectors.mysql.debezium.reader.BinlogSplitReader;
+import org.apache.flink.cdc.connectors.mysql.debezium.reader.SnapshotSplitReader;
 import org.apache.flink.runtime.jobgraph.RestoreMode;
 import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
@@ -41,7 +42,6 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.cdc.cli.CliFrontendOptions.SAVEPOINT_ALLOW_NON_RESTORED_OPTION;
@@ -54,35 +54,33 @@ public class CliFrontend {
     private static final String FLINK_HOME_ENV_VAR = "FLINK_HOME";
     private static final String FLINK_CDC_HOME_ENV_VAR = "FLINK_CDC_HOME";
 
-    private static final String url = "jdbc:mysql://100.87.67.120:3306/source?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
-    private static final String url_source = "jdbc:mysql://100.87.67.120:3306/source?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private static final String url = "jdbc:mysql://localhost:3306/source?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private static final String url_source = "jdbc:mysql://localhost:3306/source?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
 
     private static final String user = "root";
     private static final String password = "123456";
-    private static final Integer LIMIT_COUNT = 20;
+    private static final Integer LIMIT_COUNT = 25;
     private static Connection conn1;
     private static Connection conn_source;
     private static ScheduledExecutorService pool = Executors.newSingleThreadScheduledExecutor();
-    static {
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
-        }
-
-        //从 source 查出结果
-        //写入 sink
-        //删除 source
-        // 建立连接
-        try {
-            conn1 = DriverManager.getConnection(url, user, password);
-            conn1.setAutoCommit(false);
-            conn_source = DriverManager.getConnection(url_source, user, password);
-            conn_source.setAutoCommit(false);
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-    }
+//    static {
+//        try {
+//            Class.forName("com.mysql.cj.jdbc.Driver");
+//        } catch (ClassNotFoundException e) {
+//            throw new RuntimeException(e);
+//        }
+//
+//        //从 source 查出结果
+//        //写入 sink
+//        //删除 source
+//        // 建立连接
+//        try {
+//            conn1 = DriverManager.getConnection(url, user, password);
+//            conn_source = DriverManager.getConnection(url_source, user, password);
+//        } catch (SQLException e) {
+//            throw new RuntimeException(e);
+//        }
+//    }
 
 
     /*
@@ -151,8 +149,7 @@ public class CliFrontend {
 //        pool.scheduleWithFixedDelay(() -> {
 //            sinkData(fetchData());
 //            delData();
-//        }, 0, 1000, TimeUnit.MILLISECONDS);
-
+//        }, 0, 5000, java.util.concurrent.TimeUnit.MILLISECONDS);
 
         Options cliOptions = CliFrontendOptions.initializeOptions();
         CommandLineParser parser = new DefaultParser();
@@ -297,7 +294,7 @@ public class CliFrontend {
 
         List<Map<String, Object>> list = new LinkedList<>();
 
-        String sql = "select code, name, level, pcode, category from area_code_2024_source order by code asc limit " + LIMIT_COUNT;
+        String sql = "select code, name, level, pcode, category from area_code_2024 order by code asc limit " + LIMIT_COUNT;
         try (Statement stmt = conn_source.createStatement();
              ResultSet rs = stmt.executeQuery(sql);
         ) {
@@ -338,8 +335,6 @@ public class CliFrontend {
             // 执行批处理
             int[] affectedRows = pstmt.executeBatch();
 
-            conn1.commit();
-
             System.out.println("成功插入了 " + affectedRows.length + " 行数据。");
 
             // 注意：这里不需要显式关闭pstmt和conn，因为使用了try-with-resources语句
@@ -350,7 +345,7 @@ public class CliFrontend {
 
     private static void delData() {
 
-        String sql = "delete from area_code_2024_source order by code asc limit " + LIMIT_COUNT;
+        String sql = "delete from area_code_2024 order by code asc limit " + LIMIT_COUNT;
         try (
                 // 创建PreparedStatement
                 PreparedStatement pstmt = conn_source.prepareStatement(sql);
@@ -360,8 +355,6 @@ public class CliFrontend {
 
             // 执行批处理
             int affectedRows = pstmt.executeUpdate();
-
-            conn_source.commit();
 
             System.out.println("成功删除了 " + affectedRows + " 行数据。");
 
