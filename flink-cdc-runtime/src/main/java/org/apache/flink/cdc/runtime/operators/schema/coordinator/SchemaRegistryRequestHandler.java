@@ -67,6 +67,7 @@ public class SchemaRegistryRequestHandler implements Closeable {
     /**
      * Not applied SchemaChangeRequest before receiving all flush success events for its table from
      * sink writers.
+     * 好像每次只会有一个
      */
     private final List<PendingSchemaChange> pendingSchemaChanges;
     /** Sink writers which have sent flush success events for the request. */
@@ -108,13 +109,13 @@ public class SchemaRegistryRequestHandler implements Closeable {
                 metadataApplier.applySchemaChange(changeEvent);
                 LOG.debug("Apply schema change {} to table {}.", changeEvent, tableId);
             }
-            //TODO 第二个等待的请求
+
             PendingSchemaChange waitFlushSuccess = pendingSchemaChanges.get(0);
-            /*
-            TODO 为什么
-             */
+
             if (RECEIVED_RELEASE_REQUEST.equals(waitFlushSuccess.getStatus())) {
                 startNextSchemaChangeRequest();
+            } else {
+                //这里是异常情况吧
             }
         } catch (Exception e) {
             this.schemaChangeException = e;
@@ -141,7 +142,9 @@ public class SchemaRegistryRequestHandler implements Closeable {
             }
             //更新内存里 源表 的信息(tableSchemas)
             schemaManager.applySchemaChange(request.getSchemaChangeEvent());
-            //处理派生表
+            /*
+            对 source端 的 SchemaChangeEvent 进行转换，获取 sink端 需要的 SchemaChangeEvent
+             */
             List<SchemaChangeEvent> derivedSchemaChangeEvents = schemaDerivation.applySchemaChange(request.getSchemaChangeEvent());
             CompletableFuture<CoordinationResponse> response =
                     CompletableFuture.completedFuture(
@@ -159,7 +162,7 @@ public class SchemaRegistryRequestHandler implements Closeable {
         } else {
             LOG.info("There are already processing requests. Wait for processing.");
             CompletableFuture<CoordinationResponse> response = new CompletableFuture<>();
-            //放入队列末尾
+            //放入队列末尾，operator 那边如果 get，会阻塞
             pendingSchemaChanges.add(new PendingSchemaChange(request, response));
             return response;
         }
@@ -206,8 +209,9 @@ public class SchemaRegistryRequestHandler implements Closeable {
             LOG.info(
                     "All sink subtask have flushed for table {}. Start to apply schema change.",
                     tableId.toString());
-            //怎么向所有的 subtask 发送
+            //取出队列里的第一个
             PendingSchemaChange waitFlushSuccess = pendingSchemaChanges.get(0);
+            //异步表结构变更，为的是不想等太久
             schemaChangeThreadPool.submit(
                     () -> applySchemaChange(tableId, waitFlushSuccess.derivedSchemaChangeEvents));
             Thread.sleep(1000);

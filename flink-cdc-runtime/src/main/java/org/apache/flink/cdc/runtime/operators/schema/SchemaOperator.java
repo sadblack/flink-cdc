@@ -180,6 +180,7 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
 
     /**
      * This method is guaranteed to not be called concurrently with other methods of the operator.
+     * 1.收到 SchemaChangeEvent 后，向 registry 发送
      */
     @Override
     public void processElement(StreamRecord<Event> streamRecord)
@@ -330,7 +331,27 @@ public class SchemaOperator extends AbstractStreamOperator<Event>
     private void handleSchemaChangeEvent(TableId tableId, SchemaChangeEvent schemaChangeEvent)
             throws InterruptedException, TimeoutException {
         // The request will need to send a FlushEvent or block until flushing finished
+        // 往 SchemaRegistry 发送 SchemaChangeRequest
         SchemaChangeResponse response = requestSchemaChange(tableId, schemaChangeEvent);
+        /*
+        返回的是 sink端 需要处理的 SchemaChangeEvent
+        只有第一个 发送 sce 的 subtask 才会返回，其他 subtask 会堵塞在 上面一步
+        然后向下游发送 FlushEvent，并把需要 sink端处理的 SchemaChangeEvent 发送到下游
+        然后发送 ReleaseUpstreamRequest 请求，轮询 schema状态，直到 SchemaRegistry 处理成功
+
+        1. 发送了 ReleaseUpstreamRequest 后，会发生什么
+
+        2. 如果 SchemaRegistry 先于 ReleaseUpstreamRequest 收到了所有的 FlushEvent，会发生什么
+
+
+        此时 SchemaOperator 会卡在这里，FlushEvent 和 SchemaChangeEvent 会继续往下走
+        FlushEvent 和 SchemaChangeEvent 经过 PartitionOperator 时，被广播到所有下游算子
+
+        3. sink 算子收到 FlushEvent 时，会发生什么，收到 SchemaChangeEvent 时，会发生什么
+            sink operator 收到 flushEvent 时，会清空缓存里的数据
+            收到 SchemaChangeEvent 变更时，会正常传递下去，但会保证最后的Sink收到这个事件时，数据库里的结构已经更改
+
+         */
         if (!response.getSchemaChangeEvents().isEmpty()) {
             LOG.info(
                     "Sending the FlushEvent for table {} in subtask {}.",

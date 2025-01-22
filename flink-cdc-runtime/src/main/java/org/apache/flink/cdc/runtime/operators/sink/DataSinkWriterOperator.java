@@ -146,12 +146,20 @@ public class DataSinkWriterOperator<CommT> extends AbstractStreamOperator<Commit
                 .processWatermarkStatus(watermarkStatus);
     }
 
+    /*
+    具体的表结构变更操作是 SchemaRegistry 实现的
+    sink operator 只需保证 在 SchemaRegistry 应用表结构变更的时候，它已经处理完所有数据了就可以了
+    sink operator 不会被堵塞，流堵在了 sink operator 这里，会让 sink operator 收不到数据
+     */
     @Override
     public void processElement(StreamRecord<Event> element) throws Exception {
         Event event = element.getValue();
 
         // FlushEvent triggers flush
         if (event instanceof FlushEvent) {
+            /*
+            flush，然后发送 flush success 请求
+             */
             handleFlushEvent(((FlushEvent) event));
             return;
         }

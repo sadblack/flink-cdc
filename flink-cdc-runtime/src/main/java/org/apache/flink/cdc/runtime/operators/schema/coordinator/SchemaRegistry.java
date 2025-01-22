@@ -128,14 +128,13 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
         requestHandler.close();
     }
 
+    //用在不需要知道 响应的场景
     @Override
     public void handleEventFromOperator(int subtask, int attemptNumber, OperatorEvent event)
             throws Exception {
         if (event instanceof FlushSuccessEvent) {
             /*
             如果所有 subTask 都 flush 成功了，就应用表结构变更
-            TODO
-                1.什么时候收到
              */
             FlushSuccessEvent flushSuccessEvent = (FlushSuccessEvent) event;
             LOG.info(
@@ -180,7 +179,7 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
     public void notifyCheckpointComplete(long checkpointId) {
         // do nothing
     }
-
+    // 这个没有 subTask
     @Override
     public CompletableFuture<CoordinationResponse> handleCoordinationRequest(
             CoordinationRequest request) {
@@ -200,20 +199,7 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
             /*
             TODO
             什么时候收到这个请求
-
-            // The request will need to send a FlushEvent or block until flushing finished
-            SchemaChangeResponse response = requestSchemaChange(tableId, schemaChangeEvent);
-            if (!response.getSchemaChangeEvents().isEmpty()) {
-                LOG.info(
-                        "Sending the FlushEvent for table {} in subtask {}.",
-                        tableId,
-                        getRuntimeContext().getIndexOfThisSubtask());
-                output.collect(new StreamRecord<>(new FlushEvent(tableId)));
-                response.getSchemaChangeEvents().forEach(e -> output.collect(new StreamRecord<>(e)));
-                // The request will block until flushing finished in each sink writer
-                requestReleaseUpstream();
-            }
-            由 SchemaOperator 发送
+                当 SchemaOperator 发送完 FlushEvent 和 SchemaChangeEvent 以后，会向 SchemaRegistry 发送 这个请求
              */
             return requestHandler.handleReleaseUpstreamRequest();
         } else if (request instanceof GetSchemaRequest) {
@@ -223,27 +209,7 @@ public class SchemaRegistry implements OperatorCoordinator, CoordinationRequestH
             return CompletableFuture.completedFuture(
                     wrap(handleGetSchemaRequest(((GetSchemaRequest) request))));
         } else if (request instanceof SchemaChangeResultRequest) {
-            //下游算子获取表结构变更结果
-            /*
-                private void requestReleaseUpstream() throws InterruptedException, TimeoutException {
-                    CoordinationResponse coordinationResponse =
-                            sendRequestToCoordinator(new ReleaseUpstreamRequest());
-                    long nextRpcTimeOutMillis = System.currentTimeMillis() + rpcTimeOutInMillis;
-                    while (coordinationResponse instanceof SchemaChangeProcessingResponse) {
-                        if (System.currentTimeMillis() < nextRpcTimeOutMillis) {
-                            Thread.sleep(1000);
-                            coordinationResponse = sendRequestToCoordinator(new SchemaChangeResultRequest());
-                        } else {
-                            throw new TimeoutException("TimeOut when requesting release upstream");
-                        }
-                    }
-                }
-             */
-
-            /*
-            由 SchemaOperator 发送
-
-             */
+            // SchemaOperator 获取表结构变更结果
             return requestHandler.getSchemaChangeResult();
         } else if (request instanceof RefreshPendingListsRequest) {
             /*
